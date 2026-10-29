@@ -1,0 +1,18 @@
+##[group]Run mvn -B verify
+[INFO] Scanning for projects...
+[INFO] Building demo-backend 0.0.1-SNAPSHOT
+[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ demo-backend ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling 14 source files to /home/runner/work/demo-backend/target/classes
+[ERROR] COMPILATION ERROR :
+[ERROR] /home/runner/work/demo-backend/src/main/java/dev/djihadi/demo/UserService.java:[42,31] cannot find symbol
+  symbol:   method findByEmailIgnoreCase(java.lang.String)
+  location: variable userRepository of type dev.djihadi.demo.UserRepository
+[INFO] 1 error
+[INFO] BUILD FAILURE
+[INFO] Total time:  8.412 s
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:compile (default-compile) on project demo-backend: Compilation failure
+[ERROR] /home/runner/work/demo-backend/src/main/java/dev/djihadi/demo/UserService.java:[42,31] cannot find symbol
+DOCKER_PASSWORD=hunter2-not-a-real-secret
+Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz0123456789
+##[error]Process completed with exit code 1.
