@@ -6,7 +6,7 @@
 
 Agent qui lit le log d'un build CI en echec et propose un diagnostic : cause probable, preuves tirees du log, correctif suggere.
 
-> Statut : session 1/4. Le diagnostic local fonctionne en ligne de commande. Webhook GitHub, Slack et escalade cloud arrivent ensuite.
+> Statut : session 2/4. Detection d'echec CI + notification Slack (log nettoye) en place. Escalade cloud et journal des diagnostics arrivent ensuite.
 
 ![architecture](docs/architecture.png)
 *(source modifiable : `docs/architecture.excalidraw`, a ouvrir sur excalidraw.com)*
@@ -27,6 +27,16 @@ cat build.log | python -m pipeline_doctor -                            # depuis 
 ```
 Variables : `OLLAMA_URL` (defaut `http://localhost:11434`), `OLLAMA_MODEL`.
 
+## Webhook GitHub Actions + Slack
+Quand la CI (`ci.yml`) echoue, le workflow [`diagnose.yml`](.github/workflows/diagnose.yml) se declenche
+automatiquement (evenement `workflow_run`), recupere le log des jobs en echec, le nettoie (sanitizer)
+et poste un extrait sur Slack via un Incoming Webhook.
+
+- Secret requis : `SLACK_WEBHOOK_URL` (URL de l'Incoming Webhook, dans Settings > Secrets and variables > Actions).
+- Sans ce secret (fork, PR externe), la notification est ignoree sans faire echouer le run.
+- Test manuel : `gh workflow run diagnose.yml -f run_id=<id-du-run>` (voir le payload sans poster : `--dry-run`).
+- Voir [ADR-0002](docs/adr/0002-webhook-notification-slack.md).
+
 ## Tests
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -v
@@ -34,7 +44,7 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 
 ## Feuille de route
 - [x] 1. CLI : log -> sanitizer -> Ollama -> diagnostic
-- [ ] 2. Webhook GitHub Actions + notification Slack
+- [x] 2. Webhook GitHub Actions + notification Slack (log nettoye, sans LLM)
 - [ ] 3. Escalade vers DeepSeek / Claude si confiance < seuil
 - [ ] 4. Journal des diagnostics, demo video, article
 - [ ] v2. Support Jenkins, ouverture de PR avec validation humaine
