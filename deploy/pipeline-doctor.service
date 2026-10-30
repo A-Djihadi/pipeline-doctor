@@ -1,0 +1,21 @@
+[Unit]
+Description=pipeline-doctor (agent auto-heberge : poll GitHub -> Ollama -> Slack)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# A ajuster : utilisateur qui lancera le service (doit pouvoir lire le checkout
+# et joindre Ollama sur localhost).
+User=YOUR_USER
+# Checkout du depot sur le serveur.
+WorkingDirectory=/opt/pipeline-doctor
+Environment=PYTHONPATH=/opt/pipeline-doctor/src
+# Identifiants et secrets : dans un fichier a part, en chmod 600 (jamais dans ce fichier).
+EnvironmentFile=/etc/pipeline-doctor.env
+ExecStart=/usr/bin/python3 -m pipeline_doctor.agent --interval 300
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
