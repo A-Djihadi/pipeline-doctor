@@ -1,0 +1,44 @@
+name: Diagnose failed CI
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run ID a diagnostiquer (defaut : dernier run CI)"
+        required: false
+      run_name:
+        description: "Nom du workflow (cosmetique)"
+        required: false
+        default: "CI"
+      run_branch:
+        description: "Branche (cosmetique)"
+        required: false
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  notify:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    env:
+      PD_RUN_ID: ${{ github.event.workflow_run.id || github.event.inputs.run_id || github.run_id }}
+      PD_RUN_NAME: ${{ github.event.workflow_run.name || github.event.inputs.run_name || 'CI' }}
+      PD_BRANCH: ${{ github.event.workflow_run.head_branch || github.event.inputs.run_branch || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - name: Recuperer le log, nettoyer, notifier Slack
+        env:
+          PYTHONPATH: src
+          GITHUB_TOKEN: ${{ github.token }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m pipeline_doctor.notify
