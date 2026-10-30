@@ -6,7 +6,7 @@
 
 Agent qui lit le log d'un build CI en echec et propose un diagnostic : cause probable, preuves tirees du log, correctif suggere.
 
-> Statut : session 2/4. Detection d'echec CI + notification Slack (log nettoye) en place. Escalade cloud et journal des diagnostics arrivent ensuite.
+> Statut : session 3/5. Agent auto-heberge en place (poll GitHub -> Ollama -> Slack). Escalade cloud et journal des diagnostics arrivent ensuite.
 
 ![architecture](docs/architecture.png)
 *(source modifiable : `docs/architecture.excalidraw`, a ouvrir sur excalidraw.com)*
@@ -37,6 +37,14 @@ et poste un extrait sur Slack via un Incoming Webhook.
 - Test manuel : `gh workflow run diagnose.yml -f run_id=<id-du-run>` (voir le payload sans poster : `--dry-run`).
 - Voir [ADR-0002](docs/adr/0002-webhook-notification-slack.md).
 
+## Agent auto-heberge (diagnostic LLM local)
+Un service autonome sur ton serveur Ollama poll l'API GitHub, diagnostique les runs en echec avec
+un modele local et notifie Slack (cause, confiance, correctif). Idempotent via un journal SQLite :
+un run est traite une seule fois.
+
+- Lancer : `PD_REPO=... GITHUB_TOKEN=... python -m pipeline_doctor.agent --once` (ou `--interval 300`).
+- Voir [deploy/](deploy/) (systemd + cron) et [ADR-0003](docs/adr/0003-agent-auto-heberge.md).
+
 ## Tests
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -v
@@ -45,8 +53,9 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 ## Feuille de route
 - [x] 1. CLI : log -> sanitizer -> Ollama -> diagnostic
 - [x] 2. Webhook GitHub Actions + notification Slack (log nettoye, sans LLM)
-- [ ] 3. Escalade vers DeepSeek / Claude si confiance < seuil
-- [ ] 4. Journal des diagnostics, demo video, article
+- [x] 3. Agent auto-heberge : poll GitHub -> Ollama -> Slack (diagnostic continu)
+- [ ] 4. Escalade vers DeepSeek / Claude si confiance < seuil
+- [ ] 5. Journal des diagnostics (UI), demo video, article
 - [ ] v2. Support Jenkins, ouverture de PR avec validation humaine
 
 ## Securite et documentation
