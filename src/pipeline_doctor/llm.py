@@ -6,6 +6,9 @@ import urllib.request
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:3b")
 
+DEEPSEEK_URL = os.environ.get("PD_DEEPSEEK_URL", "https://api.deepseek.com/chat/completions")
+DEEPSEEK_MODEL = os.environ.get("PD_DEEPSEEK_MODEL", "deepseek-chat")
+
 SYSTEM_PROMPT = """Tu es un ingenieur DevOps senior. On te donne le log d'un build CI en echec.
 Reponds UNIQUEMENT avec un objet JSON de cette forme :
 {
@@ -37,3 +40,30 @@ def ask_ollama(log: str, timeout: int = 180) -> dict:
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = json.load(resp)
     return json.loads(body["message"]["content"])
+
+
+def ask_deepseek(log: str, timeout: int = 180) -> dict:
+    api_key = os.environ.get("PD_DEEPSEEK_API_KEY", "")
+    if not api_key:
+        raise ValueError("PD_DEEPSEEK_API_KEY absent")
+    payload = {
+        "model": DEEPSEEK_MODEL,
+        "stream": False,
+        "response_format": {"type": "json_object"},
+        "temperature": 0.1,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": f"Log du build en echec :\n\n{log}"},
+        ],
+    }
+    req = urllib.request.Request(
+        DEEPSEEK_URL,
+        data=json.dumps(payload).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        body = json.load(resp)
+    return json.loads(body["choices"][0]["message"]["content"])

@@ -11,13 +11,21 @@ Variables d'environnement :
     GITHUB_TOKEN   token lecture seule (Actions: read) pour lister runs et lire logs
     PD_DB          chemin du journal SQLite (defaut diagnostics.db)
     OLLAMA_URL, OLLAMA_MODEL, SLACK_WEBHOOK_URL (voir .env.example)
+    PD_CONFIDENCE_THRESHOLD   seuil d'escalade (defaut 0.6)
+    PD_DEEPSEEK_API_KEY       cle pour le modele cloud (optionnel)
+    PD_DEEPSEEK_URL, PD_DEEPSEEK_MODEL
 
 Politique d'idempotence : un run est traite une seule fois (journal). Si le
 diagnostic LLM echoue, on notifie quand meme avec « diagnostic indisponible »
 et on journalise `llm_error` ; si l'envoi Slack echoue, statut `notify_error`.
+
+Escalade cloud : si la confiance d'Ollama est sous le seuil et qu'une cle
+DeepSeek est presente, on re-diagnostique avec DeepSeek ; le diagnostic est
+remplace et `provider=deepseek`, sinon on garde Ollama (`provider=ollama`).
 """
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -25,11 +33,29 @@ import time
 from .github import failed_job_ids, job_log, list_jobs, list_runs, run_url
 from .journal import init as init_journal
 from .journal import is_processed, record
-from .llm import ask_ollama
+from .llm import ask_deepseek, ask_ollama
 from .sanitizer import sanitize
 from .slack import build_diagnosis_payload, send
 
 MAX_CHARS = 12000
+
+try:
+    CONFIDENCE_THRESHOLD = float(os.environ.get("PD_CONFIDENCE_THRESHOLD", "0.6"))
+except (TypeError, ValueError):
+    CONFIDENCE_THRESHOLD = 0.6
+
+
+def _confidence(diagnosis) -> float:
+    """Confiance d'un diagnostic ; None/absent/invalide -> 0.0."""
+    if not isinstance(diagnosis, dict):
+        return 0.0
+    try:
+        value = float(diagnosis.get("confidence"))
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(value):
+        return 0.0
+    return value
 
 
 def poll_once(repo, token, workflow, db_path, webhook, dry_run=False):
@@ -58,15 +84,31 @@ def poll_once(repo, token, workflow, db_path, webhook, dry_run=False):
 
             diagnosis = None
             status = "diagnosed"
+            provider = "ollama"
             try:
                 diagnosis = ask_ollama(cleaned)
             except Exception as exc:  # Ollama injoignable ou JSON invalide
                 print(f"[agent] diagnostic LLM impossible (run {run_id}) : {exc}", file=sys.stderr)
                 status = "llm_error"
 
+            # Escalade cloud : si la confiance est sous le seuil, on re-diagnostique
+            # avec DeepSeek (quand une cle est configuree). Tout echec d'escalade
+            # laisse le diagnostic Ollama en place.
+            if diagnosis is not None and _confidence(diagnosis) < CONFIDENCE_THRESHOLD:
+                if os.environ.get("PD_DEEPSEEK_API_KEY"):
+                    try:
+                        diagnosis = ask_deepseek(cleaned)
+                        provider = "deepseek"
+                    except Exception as exc:
+                        print(f"[agent] escalade DeepSeek echouee (run {run_id}) : {exc}",
+                              file=sys.stderr)
+                else:
+                    print("[agent] escalade ignoree (pas de cle).", file=sys.stderr)
+
             payload = build_diagnosis_payload(
                 repo, run.get("name") or "CI", branch, run_id,
                 run_url(repo, str(run_id)), n_redacted, diagnosis, cleaned,
+                provider=provider,
             )
 
             if dry_run:
@@ -83,7 +125,7 @@ def poll_once(repo, token, workflow, db_path, webhook, dry_run=False):
             else:
                 print("SLACK_WEBHOOK_URL absent : notification ignoree.", file=sys.stderr)
 
-            record(conn, run_id, repo, workflow, branch, diagnosis, status)
+            record(conn, run_id, repo, workflow, branch, diagnosis, status, provider=provider)
             processed += 1
             print(f"[agent] run {run_id} traite (status={status}).", file=sys.stderr)
     finally:
