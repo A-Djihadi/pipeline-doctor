@@ -6,7 +6,7 @@
 
 Agent qui lit le log d'un build CI en echec et propose un diagnostic : cause probable, preuves tirees du log, correctif suggere.
 
-> Statut : session 3/5. Agent auto-heberge en place (poll GitHub -> Ollama -> Slack). Escalade cloud et journal des diagnostics arrivent ensuite.
+> Statut : sessions 1-3 faites (CLI, webhook Slack, agent auto-heberge). Decision : Ollama only — aucune cle API cloud, pas d'escalade (ADR-0004).
 
 ![architecture](docs/architecture.png)
 *(source modifiable : `docs/architecture.excalidraw`, a ouvrir sur excalidraw.com)*
@@ -14,7 +14,7 @@ Agent qui lit le log d'un build CI en echec et propose un diagnostic : cause pro
 ## Principes
 - **Lecture seule** : l'agent propose, il n'applique rien.
 - **Secrets masques** avant tout envoi a un modele (tokens, mots de passe, cles AWS, URLs avec identifiants).
-- **Local d'abord** : Ollama traite le cas courant, un modele cloud n'est sollicite que si la confiance est basse.
+- **Local only** : Ollama traite tous les diagnostics, aucun modele cloud (ni DeepSeek, ni Claude), aucune cle API cloud.
 - **Zero dependance** : bibliotheque standard Python uniquement.
 
 ## Utilisation
@@ -54,7 +54,7 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 - [x] 1. CLI : log -> sanitizer -> Ollama -> diagnostic
 - [x] 2. Webhook GitHub Actions + notification Slack (log nettoye, sans LLM)
 - [x] 3. Agent auto-heberge : poll GitHub -> Ollama -> Slack (diagnostic continu)
-- [ ] 4. Escalade vers DeepSeek / Claude si confiance < seuil
+- [x] ~~4. Escalade vers DeepSeek / Claude si confiance < seuil~~ *(decision : Ollama only, pas d'escalade cloud — ADR-0004)*
 - [ ] 5. Journal des diagnostics (UI), demo video, article
 - [ ] v2. Support Jenkins, ouverture de PR avec validation humaine
 

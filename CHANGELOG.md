@@ -10,3 +10,6 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) - versionnage 
 - Sanitizer : masquage des secrets courants, retrait des codes ANSI, troncature (debut + fin).
 - Gouvernance et securite : LICENSE, SECURITY.md, CONTRIBUTING.md, CODEOWNERS, Dependabot, CodeQL, gitleaks, pre-commit.
 - Documentation : schema d'architecture, ADR-0001.
+
+### Removed
+- Escalade cloud (DeepSeek / Claude) retiree : decision « Ollama only », aucune cle API cloud (ADR-0004, revert PR #5).
