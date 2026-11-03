@@ -6,7 +6,7 @@
 
 Agent qui lit le log d'un build CI en echec et propose un diagnostic : cause probable, preuves tirees du log, correctif suggere.
 
-> Statut : session 4/5. Escalade cloud en place (DeepSeek si confiance < seuil). Le journal des diagnostics (UI) arrive ensuite.
+> Statut : session 3/5. Agent auto-heberge en place (poll GitHub -> Ollama -> Slack). Escalade cloud et journal des diagnostics arrivent ensuite.
 
 ![architecture](docs/architecture.png)
 *(source modifiable : `docs/architecture.excalidraw`, a ouvrir sur excalidraw.com)*
@@ -45,19 +45,6 @@ un run est traite une seule fois.
 - Lancer : `PD_REPO=... GITHUB_TOKEN=... python -m pipeline_doctor.agent --once` (ou `--interval 300`).
 - Voir [deploy/](deploy/) (systemd + cron) et [ADR-0003](docs/adr/0003-agent-auto-heberge.md).
 
-## Escalade cloud (DeepSeek)
-Quand Ollama repond avec une confiance sous le seuil, l'agent re-diagnostique avec DeepSeek
-(API compatible OpenAI) pour une reponse de meilleure qualite, sans jamais perdre le diagnostic
-local en cas d'echec.
-
-- Variables : `PD_CONFIDENCE_THRESHOLD` (defaut `0.6`), `PD_DEEPSEEK_API_KEY`,
-  `PD_DEEPSEEK_URL` (defaut `https://api.deepseek.com/chat/completions`), `PD_DEEPSEEK_MODEL`
-  (defaut `deepseek-chat`).
-- Comportement : confiance >= seuil -> Ollama conserve ; confiance < seuil et cle presente ->
-  diagnostic remplace (`provider=deepseek`) ; sans cle ou en cas d'echec -> Ollama conserve.
-- Le message Slack indique le fournisseur (`Diagnostic (via DeepSeek, X%)`).
-- Voir [ADR-0004](docs/adr/0004-escalade-cloud.md).
-
 ## Tests
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -v
@@ -67,7 +54,7 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 - [x] 1. CLI : log -> sanitizer -> Ollama -> diagnostic
 - [x] 2. Webhook GitHub Actions + notification Slack (log nettoye, sans LLM)
 - [x] 3. Agent auto-heberge : poll GitHub -> Ollama -> Slack (diagnostic continu)
-- [x] 4. Escalade vers DeepSeek si confiance < seuil
+- [ ] 4. Escalade vers DeepSeek / Claude si confiance < seuil
 - [ ] 5. Journal des diagnostics (UI), demo video, article
 - [ ] v2. Support Jenkins, ouverture de PR avec validation humaine
 
