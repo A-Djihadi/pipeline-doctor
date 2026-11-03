@@ -52,11 +52,10 @@ def _confidence_pct(diagnosis: dict) -> str:
 
 
 def build_diagnosis_payload(repo, run_name, branch, run_id, run_url,
-                            n_redacted, diagnosis, sanitized, provider="ollama"):
+                            n_redacted, diagnosis, sanitized):
     """Payload Block Kit avec le diagnostic (cause, confiance, correctif, preuves).
 
     `diagnosis` peut etre None (LLM indisponible) : on l'indique sans echouer.
-    `provider` est le modele qui a produit le diagnostic ("ollama" ou "deepseek").
     """
     blocks = [
         {
@@ -75,12 +74,10 @@ def build_diagnosis_payload(repo, run_name, branch, run_id, run_url,
     ]
 
     if diagnosis:
-        pct = _confidence_pct(diagnosis)
-        label = f"*Diagnostic (via DeepSeek, {pct})*" if provider == "deepseek" \
-            else f"*Diagnostic ({pct})*"
         blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"{label}\n{diagnosis.get('cause', '-')}"},
+            "text": {"type": "mrkdwn", "text":
+                f"*Diagnostic ({_confidence_pct(diagnosis)})*\n{diagnosis.get('cause', '-')}"},
         })
         fix = diagnosis.get("fix")
         if fix:

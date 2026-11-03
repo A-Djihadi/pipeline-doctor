@@ -28,18 +28,10 @@ def init(path: str) -> sqlite3.Connection:
             fix          TEXT,
             evidence     TEXT,
             status       TEXT NOT NULL,
-            provider     TEXT NOT NULL DEFAULT 'ollama',
             processed_at TEXT NOT NULL
         )
         """
     )
-    # Migration sure pour une base existante (sessions precedentes) :
-    # on n'ajoute la colonne que si elle manque.
-    cols = [row[1] for row in conn.execute("PRAGMA table_info(diagnostics)")]
-    if "provider" not in cols:
-        conn.execute(
-            "ALTER TABLE diagnostics ADD COLUMN provider TEXT NOT NULL DEFAULT 'ollama'"
-        )
     conn.commit()
     return conn
 
@@ -49,16 +41,14 @@ def is_processed(conn: sqlite3.Connection, run_id) -> bool:
     return row is not None
 
 
-def record(conn: sqlite3.Connection, run_id, repo, workflow, branch, diagnosis, status,
-           provider="ollama"):
+def record(conn: sqlite3.Connection, run_id, repo, workflow, branch, diagnosis, status):
     """Enregistre (ou remplace) l'entree d'un run. diagnosis peut etre None."""
     d = diagnosis or {}
     conn.execute(
         """
         INSERT OR REPLACE INTO diagnostics
-            (run_id, repo, workflow, branch, cause, confidence, fix, evidence,
-             status, provider, processed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (run_id, repo, workflow, branch, cause, confidence, fix, evidence, status, processed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             run_id,
@@ -70,7 +60,6 @@ def record(conn: sqlite3.Connection, run_id, repo, workflow, branch, diagnosis, 
             d.get("fix"),
             json.dumps(d.get("evidence", [])),
             status,
-            provider,
             _now(),
         ),
     )
