@@ -1,9 +1,16 @@
 {
-  "_doc": "Jeu d'evaluation : pour chaque log, la categorie attendue et des mots-cles que la cause ou le correctif doit contenir (au moins un).",
+  "_doc": "Jeu d'evaluation : pour chaque log, la categorie attendue (cause racine), des mots-cles dont au moins un doit figurer dans la cause ou le correctif, et des mots interdits (diagnostic faux mais plausible). rules_category : ce que voient les regles quand le symptome masque la cause (logs pieges). Comparaison sans accents ni casse.",
   "maven-compile-error.log": {"category": "compilation", "keywords": ["findByEmailIgnoreCase", "symbol", "symbole", "compil"]},
   "npm-eresolve.log": {"category": "dependency", "keywords": ["ngrx", "peer", "angular", "dependan", "conflit"]},
   "pytest-failure.log": {"category": "tests", "keywords": ["arrondi", "rounding", "float", "29.97", "decimal", "assert"]},
   "docker-push-denied.log": {"category": "registry_auth", "keywords": ["authentif", "acr", "registre", "registry", "unauthorized"]},
   "oom-killed.log": {"category": "oom", "keywords": ["memoire", "memory", "heap", "xmx", "oom"]},
-  "network-timeout.log": {"category": "network", "keywords": ["reseau", "dns", "timeout", "network", "pypi", "proxy", "connexion"]}
+  "network-timeout.log": {"category": "network", "keywords": ["reseau", "dns", "timeout", "network", "proxy", "connexion", "resolution de nom"],
+                          "forbidden": ["n'est pas disponible", "pas disponible sur pypi", "n'existe pas", "does not exist", "version specifiee", "mauvaise version"]},
+  "disk-full.log": {"category": "disk", "keywords": ["espace", "disque", "disk", "space", "prune", "nettoy"],
+                    "forbidden": ["dependan", "conflit"]},
+  "missing-env-in-tests.log": {"category": "config", "rules_category": "tests", "keywords": ["DATABASE_URL", "variable d'environnement", "environment variable", "secret"],
+                               "forbidden": ["99.5", "arrondi", "calcul du total"]},
+  "api-timeout-in-tests.log": {"category": "network", "keywords": ["timeout", "reseau", "connexion", "injoignable", "mock", "sandbox"],
+                               "forbidden": ["assertion"]}
 }

@@ -3,6 +3,12 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) - versionnage [SemVer](https://semver.org/lang/fr/).
 
 ## [Unreleased]
+### Changed
+- Re-essai sur doute et plus seulement sur confiance basse : preuve citee absente du log ou categorie du modele differente de celle des regles (`doubts`, `retry_reasons`, score `category_agreement`). Le prompt demande la categorie de la cause racine et interdit les contournements (`--force`, tests desactives...).
+- Evaluation durcie : `category_match` juge la categorie du modele (plus celle des regles), `cause_keyword` refuse les mots interdits et ignore les accents, nouvel evaluateur `safe_fix`, 3 logs pieges (disque plein, variable d'environnement manquante dans les tests, timeout d'API dans les tests). Regle `disk`.
+- `python -m pipeline_doctor.tracing` synchronise le prompt dans Langfuse sans creer de version en double.
+- Schema d'architecture regenere (sans l'escalade cloud retiree par l'ADR-0004, avec les cas d'utilisation) ; schema du graphe mis a jour.
+
 ### Added
 - Mode graphe LangGraph (`graph.py`) : sanitize -> classify -> diagnose, re-essai a contexte resserre si confiance basse, repli par regles si Ollama est indisponible, validation humaine (`--review`, interrupt + checkpointer), schema Mermaid (ADR-0005).
 - Observabilite Langfuse auto-hebergee (`tracing.py`, `deploy/langfuse/`) : span par noeud, generation par appel Ollama (tokens, modele, prompt versionne), scores `confidence` / `evidence_grounded` / `source`, sanitizer branche en `mask`.

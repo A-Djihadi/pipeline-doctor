@@ -29,7 +29,12 @@ RULES = [
          "Erreur de compilation : un symbole (methode, classe) reference n'existe pas.",
          "Verifier la signature appelee (renommage, methode manquante dans l'interface) puis recompiler.",
          0.7),
-    Rule("network", re.compile(r"Could not resolve host|Temporary failure in name resolution|"
+    # Avant reseau et dependances : un disque plein casse souvent un `npm ci` ou un `docker build`.
+    Rule("disk", re.compile(r"(?i)no space left on device|\bENOSPC\b|insufficient space"),
+         "Disque plein sur le runner : l'ecriture (cache, image, node_modules) a echoue.",
+         "Liberer de l'espace (docker system prune, nettoyage des caches) ou agrandir le disque du runner.",
+         0.75),
+    Rule("network",re.compile(r"Could not resolve host|Temporary failure in name resolution|"
                                r"Connection timed out|ETIMEDOUT|ECONNREFUSED|i/o timeout|"
                                r"TLS handshake timeout|\btimed out\b"),
          "Probleme reseau : DNS, timeout ou service distant injoignable.",

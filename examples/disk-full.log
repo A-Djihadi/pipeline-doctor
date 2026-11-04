@@ -1,0 +1,13 @@
+##[group]Run docker build -t registry.example.com/shop/api:2.4.0 .
+#7 [build 3/7] COPY package.json package-lock.json ./
+#7 DONE 0.1s
+#8 [build 4/7] RUN npm ci
+#8 12.31 npm ERR! code ENOSPC
+#8 12.31 npm ERR! syscall write
+#8 12.31 npm ERR! errno -28
+#8 12.31 npm ERR! nospc ENOSPC: no space left on device, write
+#8 12.31 npm ERR! nospc There appears to be insufficient space on your system to finish.
+#8 12.31 npm ERR! nospc Clear up some disk space and try again.
+#8 ERROR: process "/bin/sh -c npm ci" did not complete successfully: exit code: 228
+ERROR: failed to solve: write /var/lib/docker/tmp/buildkit-mount2291: no space left on device
+##[error]Process completed with exit code 1.

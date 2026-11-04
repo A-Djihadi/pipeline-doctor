@@ -1,0 +1,24 @@
+##[group]Run python -m pytest -q
+........E.....F
+==================================== ERRORS ====================================
+______________________ ERROR at setup of test_create_order _____________________
+
+    @pytest.fixture
+    def db():
+>       url = os.environ["DATABASE_URL"]
+E       KeyError: 'DATABASE_URL'
+
+tests/conftest.py:12: KeyError
+=================================== FAILURES ===================================
+_______________________________ test_order_total _______________________________
+
+    def test_order_total(db_or_none):
+>       assert order_total(db_or_none, 42) == 99.5
+E       AssertionError: assert None == 99.5
+
+tests/test_orders.py:31: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_orders.py::test_order_total - AssertionError: assert None == 99.5
+ERROR tests/test_orders.py::test_create_order - KeyError: 'DATABASE_URL'
+1 failed, 13 passed, 1 error in 0.84s
+##[error]Process completed with exit code 1.

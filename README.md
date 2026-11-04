@@ -54,9 +54,9 @@ Le diagnostic devient un **graphe d'etats** : chaque etape est un noeud, chaque 
 | Noeud | Role |
 |---|---|
 | `sanitize` | masque les secrets, tronque (rien de brut ne va plus loin) |
-| `classify` | regles deterministes : categorie d'echec (compilation, dependances, tests, OOM, registre, reseau, config) |
-| `diagnose` | appel Ollama ; *generation* Langfuse (prompt versionne, tokens, latence) |
-| `focus_context` | confiance < 0.6 : 2e essai avec les seules fenetres d'erreur (max 2 essais) |
+| `classify` | regles deterministes : categorie d'echec (compilation, dependances, tests, OOM, registre, reseau, config, disque) |
+| `diagnose` | appel Ollama ; *generation* Langfuse (prompt versionne, tokens, latence) ; le modele donne aussi sa categorie |
+| `focus_context` | doute sur le diagnostic : 2e essai avec les seules fenetres d'erreur (max 2 essais). Doute = confiance < 0.6, preuve citee absente du log, ou categorie du modele differente de celle des regles (raisons dans `retry_reasons`) |
 | `fallback_rules` | Ollama indisponible : diagnostic par regles, marque `source=rules` |
 | `finalize` | scores : `confidence`, `evidence_grounded` (preuves presentes dans le log = anti-hallucination) |
 | `human_review` | `--review` : `interrupt()` + checkpointer, le graphe attend une validation humaine |
@@ -74,11 +74,16 @@ PD_ENGINE=graph python -m pipeline_doctor.agent --once                          
 `LANGFUSE_BASE_URL`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` ; chaque diagnostic affiche
 l'URL de sa trace. `evals --langfuse` cree le dataset et lance une *experience* comparable
 entre modeles / versions de prompt. Sans cles, le tracing est desactive (no-op).
+`python -m pipeline_doctor.tracing` publie `llm.SYSTEM_PROMPT` en `production` dans Langfuse,
+seulement si le texte a change (pas de version en double).
 
-**Evaluation** (`examples/` + `expected.json`, 6 logs) : `category_match`, `cause_keyword`,
-`evidence_grounded`, `no_secret_leak`. Le repli par regles sert de *baseline* (100 % sur ce jeu,
-construit pour elles) ; un modele ou un prompt n'est adopte que s'il fait au moins aussi bien
-sur l'ancrage des preuves et zero fuite. La CI rejoue l'evaluation et echoue sur toute fuite.
+**Evaluation** (`examples/` + `expected.json`, 9 logs dont 3 pieges ou le symptome masque la
+cause) : `category_match` (categorie du modele, pas des regles), `cause_keyword` (mots-cles
+attendus et mots interdits, sans accents), `evidence_grounded`, `no_secret_leak`, `safe_fix`
+(pas de contournement : `--force`, `--legacy-peer-deps`, tests desactives...). Le repli par
+regles sert de *baseline* ; il rate volontairement les logs pieges. Un modele ou un prompt n'est
+adopte que s'il fait au moins aussi bien sur l'ancrage des preuves et zero fuite. La CI rejoue
+l'evaluation et echoue sur toute fuite.
 
 ## Tests
 ```bash

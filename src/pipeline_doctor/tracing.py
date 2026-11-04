@@ -79,6 +79,25 @@ def system_prompt():
         return SYSTEM_PROMPT, None
 
 
+def sync_prompt(lf=None) -> tuple[int, bool]:
+    """Publie SYSTEM_PROMPT en `production`, seulement si le texte a change.
+
+    Idempotent : relancer ne cree pas de version en double. Retourne (version, creee).
+    """
+    lf = lf or client()
+    if lf is None:
+        raise RuntimeError("Langfuse non configure (LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY).")
+    try:
+        current = lf.get_prompt(PROMPT_NAME, label="production", cache_ttl_seconds=0)
+        if current.prompt == SYSTEM_PROMPT:
+            return current.version, False
+    except Exception:  # prompt absent : premiere publication
+        pass
+    created = lf.create_prompt(name=PROMPT_NAME, prompt=SYSTEM_PROMPT, labels=["production"], type="text",
+                               commit_message="sync depuis llm.SYSTEM_PROMPT")
+    return created.version, True
+
+
 @contextmanager
 def trace(name: str, *, session_id=None, tags=None, metadata=None, input=None):
     """Span racine d'un diagnostic. Cede l'objet span (ou None si Langfuse coupe)."""
@@ -122,3 +141,9 @@ def current_trace_url():
 def flush():
     if _client is not None:
         _client.flush()
+
+
+if __name__ == "__main__":  # python -m pipeline_doctor.tracing : synchronise le prompt
+    version, created = sync_prompt()
+    flush()
+    print(f"prompt '{PROMPT_NAME}' : version {version} {'creee' if created else 'inchangee'} (production)")
