@@ -1,0 +1,16 @@
+##[group]Run python -m pytest -q
+............F......
+=================================== FAILURES ===================================
+___________________________ test_invoice_total_rounding ___________________________
+
+    def test_invoice_total_rounding():
+        invoice = Invoice(lines=[Line(9.99, qty=3)])
+>       assert invoice.total() == 29.97
+E       AssertionError: assert 29.969999999999995 == 29.97
+E        +  where 29.969999999999995 = <bound method Invoice.total of Invoice(...)>()
+
+tests/test_invoice.py:14: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_invoice.py::test_invoice_total_rounding - AssertionError: assert 29.969999999999995 == 29.97
+1 failed, 18 passed in 0.42s
+##[error]Process completed with exit code 1.

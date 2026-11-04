@@ -1,0 +1,9 @@
+{
+  "_doc": "Jeu d'evaluation : pour chaque log, la categorie attendue et des mots-cles que la cause ou le correctif doit contenir (au moins un).",
+  "maven-compile-error.log": {"category": "compilation", "keywords": ["findByEmailIgnoreCase", "symbol", "symbole", "compil"]},
+  "npm-eresolve.log": {"category": "dependency", "keywords": ["ngrx", "peer", "angular", "dependan", "conflit"]},
+  "pytest-failure.log": {"category": "tests", "keywords": ["arrondi", "rounding", "float", "29.97", "decimal", "assert"]},
+  "docker-push-denied.log": {"category": "registry_auth", "keywords": ["authentif", "acr", "registre", "registry", "unauthorized"]},
+  "oom-killed.log": {"category": "oom", "keywords": ["memoire", "memory", "heap", "xmx", "oom"]},
+  "network-timeout.log": {"category": "network", "keywords": ["reseau", "dns", "timeout", "network", "pypi", "proxy", "connexion"]}
+}

@@ -1,0 +1,8 @@
+##[group]Run docker push myregistry.azurecr.io/genai/rag-api:1.8.2
+The push refers to repository [myregistry.azurecr.io/genai/rag-api]
+5f70bf18a086: Preparing
+a3ed95caeb02: Preparing
+unauthorized: authentication required, visit https://aka.ms/acr/authorization for more information.
+Error: Process completed with exit code 1.
+https://deploy:SuperSecretPassw0rd@myregistry.azurecr.io/v2/
+##[error]Process completed with exit code 1.

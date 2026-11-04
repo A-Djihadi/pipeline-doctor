@@ -1,0 +1,13 @@
+##[group]Run ./gradlew build
+> Task :compileJava
+> Task :test
+
+ReportServiceTest > generatesLargeReport() STANDARD_ERROR
+    Exception in thread "Test worker" java.lang.OutOfMemoryError: Java heap space
+        at java.base/java.util.Arrays.copyOf(Arrays.java:3537)
+        at dev.demo.report.ReportService.render(ReportService.java:88)
+
+> Task :test FAILED
+FAILURE: Build failed with an exception.
+Error: The operation was canceled.
+##[error]Process completed with exit code 137.

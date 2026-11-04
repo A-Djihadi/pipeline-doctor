@@ -19,13 +19,26 @@ et dis ce qui manque dans "cause". N'invente jamais de lignes qui ne sont pas da
 
 
 def ask_ollama(log: str, timeout: int = 180) -> dict:
+    """Diagnostic brut (compatibilite sessions 1-3) : retourne seulement le JSON."""
+    return chat(SYSTEM_PROMPT, log, timeout=timeout)[0]
+
+
+def chat(system_prompt: str, log: str, timeout: int = 180, model: str | None = None) -> tuple[dict, dict]:
+    """Appel Ollama /api/chat. Retourne (diagnostic JSON, meta).
+
+    meta contient le modele, les parametres et l'usage en tokens rapportes par Ollama
+    (prompt_eval_count / eval_count) : c'est ce que le graphe envoie a Langfuse
+    pour suivre cout (ici en tokens, le modele est local) et latence.
+    """
+    model = model or OLLAMA_MODEL
+    options = {"temperature": 0.1}
     payload = {
-        "model": OLLAMA_MODEL,
+        "model": model,
         "stream": False,
         "format": "json",
-        "options": {"temperature": 0.1},
+        "options": options,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Log du build en echec :\n\n{log}"},
         ],
     }
@@ -36,4 +49,12 @@ def ask_ollama(log: str, timeout: int = 180) -> dict:
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = json.load(resp)
-    return json.loads(body["message"]["content"])
+    meta = {
+        "model": model,
+        "model_parameters": options,
+        "usage": {
+            "input": int(body.get("prompt_eval_count") or 0),
+            "output": int(body.get("eval_count") or 0),
+        },
+    }
+    return json.loads(body["message"]["content"]), meta
