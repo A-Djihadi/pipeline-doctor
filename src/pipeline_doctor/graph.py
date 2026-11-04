@@ -174,7 +174,9 @@ def run(raw_log: str, *, review: bool = False, ask=input, session_id=None, metad
             if not snapshot.next:
                 break
             question = snapshot.tasks[0].interrupts[0].value
-            answer = ask(f"\n{question['question']} [o/N] ")
+            d = question.get("diagnosis") or {}
+            answer = ask(f"\n[revue] cause    : {d.get('cause')}\n[revue] correctif: {d.get('fix')}\n"
+                         f"{question['question']} [o/N] ")
             payload = Command(resume=answer)
         url = tracing.current_trace_url()
         if root is not None:
