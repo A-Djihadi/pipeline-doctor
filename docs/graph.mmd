@@ -1,0 +1,19 @@
+%% Schema annote du graphe LangGraph (source : python -m pipeline_doctor.graph --mermaid)
+flowchart TD
+    S([log CI en echec]) --> sanitize["sanitize<br/><small>secrets masques, troncature</small>"]
+    sanitize --> classify["classify<br/><small>regles : compilation, tests, OOM, reseau...</small>"]
+    classify --> diagnose["diagnose<br/><small>Ollama local · generation Langfuse</small>"]
+    diagnose -- "confiance >= 0.6" --> finalize["finalize<br/><small>scores : confidence, evidence_grounded</small>"]
+    diagnose -- "confiance < 0.6<br/>(1er essai)" --> focus["focus_context<br/><small>fenetres autour des erreurs</small>"]
+    focus --> diagnose
+    diagnose -- "Ollama indisponible" --> fallback["fallback_rules<br/><small>diagnostic deterministe</small>"]
+    fallback --> finalize
+    finalize -- "--review" --> review["human_review<br/><small>interrupt() + checkpointer</small>"]
+    finalize --> E([Slack / CLI])
+    review --> E
+    classDef llm fill:#e8f1ff,stroke:#2f6fdb,color:#0b2a5b
+    classDef safe fill:#e9f7ef,stroke:#2e8b57,color:#0f3d24
+    classDef human fill:#fff4e5,stroke:#d9822b,color:#5a3200
+    class diagnose,focus llm
+    class sanitize,classify,fallback,finalize safe
+    class review human

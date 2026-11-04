@@ -1,0 +1,18 @@
+##[group]Run npm ci
+npm ERR! code ERESOLVE
+npm ERR! ERESOLVE unable to resolve dependency tree
+npm ERR!
+npm ERR! While resolving: front-app@1.4.0
+npm ERR! Found: @angular/core@17.3.12
+npm ERR! node_modules/@angular/core
+npm ERR!   @angular/core@"^17.3.0" from the root project
+npm ERR!
+npm ERR! Could not resolve dependency:
+npm ERR! peer @angular/core@"^18.0.0" from @ngrx/store@18.1.1
+npm ERR! node_modules/@ngrx/store
+npm ERR!   @ngrx/store@"^18.1.1" from the root project
+npm ERR!
+npm ERR! Fix the upstream dependency conflict, or retry
+npm ERR! this command with --force or --legacy-peer-deps
+NPM_TOKEN=npm_not_a_real_token_value_0000
+##[error]Process completed with exit code 1.

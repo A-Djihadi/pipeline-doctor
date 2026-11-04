@@ -26,6 +26,28 @@ jobs:
           PYTHONPATH: src
         run: python -m unittest discover -s tests -v
 
+  test-agent-extra:
+    # Mode graphe (ADR-0005) : LangGraph + Langfuse, sans serveur (spans en memoire, LLM mocke).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Installer l'extra agent
+        run: pip install -r requirements-agent.txt
+      - name: Tests (graphe, tracing, evaluateurs)
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -v
+      - name: Evaluation (repli regles, gate sur les fuites de secrets)
+        env:
+          PYTHONPATH: src
+          OLLAMA_URL: http://127.0.0.1:9
+        run: python -m pipeline_doctor.evals --min-category 0.8
+
   secrets-scan:
     runs-on: ubuntu-latest
     steps:

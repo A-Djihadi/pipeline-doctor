@@ -11,6 +11,7 @@ Variables d'environnement :
     GITHUB_TOKEN   token lecture seule (Actions: read) pour lister runs et lire logs
     PD_DB          chemin du journal SQLite (defaut diagnostics.db)
     OLLAMA_URL, OLLAMA_MODEL, SLACK_WEBHOOK_URL (voir .env.example)
+    PD_ENGINE      "linear" (defaut, stdlib) ou "graph" (LangGraph + Langfuse, ADR-0005)
 
 Politique d'idempotence : un run est traite une seule fois (journal). Si le
 diagnostic LLM echoue, on notifie quand meme avec « diagnostic indisponible »
@@ -58,11 +59,19 @@ def poll_once(repo, token, workflow, db_path, webhook, dry_run=False):
 
             diagnosis = None
             status = "diagnosed"
-            try:
-                diagnosis = ask_ollama(cleaned)
-            except Exception as exc:  # Ollama injoignable ou JSON invalide
-                print(f"[agent] diagnostic LLM impossible (run {run_id}) : {exc}", file=sys.stderr)
-                status = "llm_error"
+            if os.environ.get("PD_ENGINE") == "graph":
+                from .graph import run as run_graph  # extra optionnel
+                result = run_graph(raw, session_id=f"{repo}#{run_id}",
+                                   metadata={"repo": repo, "run_id": run_id, "branch": branch})
+                diagnosis = result.get("diagnosis")
+                if result.get("source") == "rules":
+                    status = "rules_fallback"
+            else:
+                try:
+                    diagnosis = ask_ollama(cleaned)
+                except Exception as exc:  # Ollama injoignable ou JSON invalide
+                    print(f"[agent] diagnostic LLM impossible (run {run_id}) : {exc}", file=sys.stderr)
+                    status = "llm_error"
 
             payload = build_diagnosis_payload(
                 repo, run.get("name") or "CI", branch, run_id,
