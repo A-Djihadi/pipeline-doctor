@@ -15,5 +15,9 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) - versionnage 
 - Gouvernance et securite : LICENSE, SECURITY.md, CONTRIBUTING.md, CODEOWNERS, Dependabot, CodeQL, gitleaks, pre-commit.
 - Documentation : schema d'architecture, ADR-0001.
 
+### Security
+- Le log brut ne transite plus par l'etat du graphe (contexte d'execution LangGraph) : il n'apparait plus en entree des spans Langfuse, meme sans le `mask`.
+- `evals --langfuse` pousse dans le dataset un log nettoye par le sanitizer (le `mask` ne couvre pas les datasets) ; le log brut reste local pour l'execution et l'evaluateur `no_secret_leak`.
+
 ### Removed
 - Escalade cloud (DeepSeek / Claude) retiree : decision « Ollama only », aucune cle API cloud (ADR-0004, revert PR #5).

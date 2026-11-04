@@ -20,7 +20,7 @@ import re
 import sys
 
 from . import graph, tracing
-from .sanitizer import SECRET_PATTERNS
+from .sanitizer import SECRET_PATTERNS, sanitize
 
 DATASET = "pipeline-doctor-ci-logs"
 
@@ -67,25 +67,33 @@ def run_local(items: list[dict]) -> list[dict]:
 
 
 def run_langfuse(items: list[dict], run_name: str):
-    """Pousse le dataset dans Langfuse puis lance une experience (une trace par item)."""
+    """Pousse le dataset dans Langfuse puis lance une experience (une trace par item).
+
+    Le `mask` du client ne couvre que les traces : le dataset recoit donc un log deja nettoye.
+    Le log brut reste local (`raw`) : la tache le fait passer par le graphe (qui le nettoie
+    lui-meme) et `no_secret_leak` le compare a la sortie.
+    """
     lf = tracing.client()
     if lf is None:
         raise SystemExit("Langfuse non configure (LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_BASE_URL).")
     from langfuse import Evaluation
 
+    raw = {it["input"]["file"]: it["input"]["log"] for it in items}
     lf.create_dataset(name=DATASET, description="Logs CI en echec + categorie et mots-cles attendus")
     for it in items:  # id stable = idempotent (re-run sans doublons)
-        lf.create_dataset_item(dataset_name=DATASET, id=re.sub(r"\W", "-", it["input"]["file"]),
-                               input=it["input"], expected_output=it["expected_output"])
+        name = it["input"]["file"]
+        lf.create_dataset_item(dataset_name=DATASET, id=re.sub(r"\W", "-", name),
+                               input={"file": name, "log": sanitize(raw[name])[0]},
+                               expected_output=it["expected_output"])
     dataset = lf.get_dataset(DATASET)
 
     def task(*, item, **_):
         inp = item.input if hasattr(item, "input") else item["input"]
-        return graph.run(inp["log"], metadata={"file": inp["file"], "eval": run_name})
+        return graph.run(raw[inp["file"]], metadata={"file": inp["file"], "eval": run_name})
 
     def make(name):
         def ev(*, input, output, expected_output, **_):
-            return Evaluation(name=name, value=evaluate(input["log"], expected_output, output)[name])
+            return Evaluation(name=name, value=evaluate(raw[input["file"]], expected_output, output)[name])
         return ev
 
     result = lf.run_experiment(name="pipeline-doctor-eval", run_name=run_name, data=dataset.items,

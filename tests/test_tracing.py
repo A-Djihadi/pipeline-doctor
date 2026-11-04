@@ -54,6 +54,22 @@ class TracingTest(unittest.TestCase):
         # la generation est rattachee au noeud diagnose
         self.assertEqual(gen.parent.span_id, spans["diagnose"].context.span_id)
 
+    def test_raw_log_is_never_traced(self):
+        # Le log brut ne doit pas transiter par l'etat du graphe : sinon chaque span de noeud
+        # l'exporte en entree, et seul `mask` empeche la fuite.
+        d = {"cause": "c", "evidence": [], "fix": "f", "confidence": 0.9}
+        meta = {"model": "m", "model_parameters": {}, "usage": {"input": 1, "output": 1}}
+        with mock.patch.object(graph, "chat", return_value=(d, meta)), \
+                mock.patch.object(tracing.client(), "get_prompt", side_effect=RuntimeError("offline")):
+            graph.run("[ERROR] boom\nAuthorization: Bearer " + FAKE_TOKEN + "\n", review=True, ask=lambda _q: "o")
+        tracing.flush()
+        spans = self.exporter.get_finished_spans()
+        self.assertTrue(spans)
+        for s in spans:
+            for value in s.attributes.values():
+                self.assertNotIn("raw_log", str(value), s.name)
+                self.assertNotIn(FAKE_TOKEN, str(value), s.name)
+
     def test_mask_redacts_nested_data(self):
         masked = tracing.mask(data={"a": ["token " + FAKE_TOKEN], "b": 3})
         self.assertNotIn(FAKE_TOKEN, str(masked))

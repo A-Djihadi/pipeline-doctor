@@ -30,7 +30,10 @@ Trois besoins ne rentrent plus dans ce modele :
 
 ## Consequences
 - ADR-0004 tenu : Langfuse et Ollama sont locaux, aucun log ne quitte la machine. Le sanitizer
-  est en plus branche comme `mask` du client Langfuse (defense en profondeur).
+  est en plus branche comme `mask` du client Langfuse (defense en profondeur). Le log brut
+  passe par le contexte d'execution LangGraph, pas par l'etat : le CallbackHandler, qui trace
+  l'etat en entree de chaque noeud, ne le voit jamais. Le `mask` ne couvre pas les datasets :
+  `evals.py` y pousse un log deja nettoye.
 - Deux dependances (versions epinglees, Dependabot) pour le mode graphe ; la CI teste les deux
   modes (stdlib seul, et avec l'extra).
 - Langfuse auto-heberge = 6 conteneurs (web, worker, Postgres, ClickHouse, Redis, MinIO) : cout

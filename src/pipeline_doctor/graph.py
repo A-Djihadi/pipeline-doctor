@@ -19,10 +19,12 @@ import json
 import sys
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Literal, TypedDict
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.runtime import Runtime
 from langgraph.types import Command, interrupt
 
 from . import tracing
@@ -35,9 +37,14 @@ CONFIDENCE_THRESHOLD = 0.6
 MAX_ATTEMPTS = 2
 
 
+@dataclass(frozen=True)
+class DiagContext:
+    """Donnees d'execution hors etat : ni tracees en entree des noeuds, ni checkpointees."""
+    raw_log: str             # log brut, lu uniquement par `sanitize`
+
+
 class DiagState(TypedDict, total=False):
-    raw_log: str             # log brut (jamais envoye au modele ni a Langfuse)
-    log: str                 # log nettoye
+    log: str                 # log nettoye (le log brut reste dans DiagContext)
     n_redacted: int
     category: str            # etiquette par regles (maven, oom, reseau...)
     rule_hint: dict          # diagnostic par regles (repli)
@@ -52,8 +59,8 @@ class DiagState(TypedDict, total=False):
 
 # ---------------------------------------------------------------- noeuds
 
-def sanitize(state: DiagState) -> DiagState:
-    cleaned, n = sanitize_log(state["raw_log"])
+def sanitize(state: DiagState, runtime: Runtime[DiagContext]) -> DiagState:
+    cleaned, n = sanitize_log(runtime.context.raw_log)
     return {"log": cleaned, "context": cleaned, "n_redacted": n, "attempts": 0}
 
 
@@ -123,7 +130,7 @@ def route_after_diagnose(state: DiagState) -> Literal["finalize", "focus_context
 
 
 def build(review: bool = False):
-    g = StateGraph(DiagState)
+    g = StateGraph(DiagState, context_schema=DiagContext)
     for name, fn in [("sanitize", sanitize), ("classify", classify), ("diagnose", diagnose),
                      ("focus_context", focus_context), ("fallback_rules", fallback_rules),
                      ("finalize", finalize)]:
@@ -160,9 +167,12 @@ def run(raw_log: str, *, review: bool = False, ask=input, session_id=None, metad
     with tracing.trace("pipeline-doctor.diagnose", session_id=session_id,
                        tags=["pipeline-doctor", "langgraph"], metadata=metadata,
                        input={"chars": len(raw_log)}) as root:
-        payload = {"raw_log": raw_log}
+        # Le log brut passe par le contexte d'execution, pas par l'etat : le CallbackHandler
+        # trace l'etat en entree de chaque noeud, il n'y verra que le log nettoye.
+        context = DiagContext(raw_log=raw_log)
+        payload = {"attempts": 0}
         while True:
-            for update in app.stream(payload, thread, stream_mode="updates"):
+            for update in app.stream(payload, thread, stream_mode="updates", context=context):
                 for node, values in update.items():
                     if node == "__interrupt__":
                         continue
@@ -182,7 +192,6 @@ def run(raw_log: str, *, review: bool = False, ask=input, session_id=None, metad
         if root is not None:
             root.update(output={k: final.get(k) for k in ("category", "source", "diagnosis", "grounded")})
     tracing.flush()
-    final.pop("raw_log", None)
     final.update({"path": path, "duration_s": round(time.monotonic() - started, 2), "trace_url": url})
     return final
 
