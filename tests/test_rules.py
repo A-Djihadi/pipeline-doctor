@@ -16,7 +16,12 @@ class ClassifyTest(unittest.TestCase):
                 continue
             with self.subTest(name=name):
                 log = open(os.path.join(EXAMPLES, name), encoding="utf-8").read()
-                self.assertEqual(classify(log)["category"], exp["category"])
+                # rules_category : logs pieges ou les regles voient le symptome, pas la cause
+                self.assertEqual(classify(log)["category"], exp.get("rules_category", exp["category"]))
+
+    def test_disk_full(self):
+        hint = classify("npm ERR! nospc ENOSPC: no space left on device, write\n")
+        self.assertEqual(hint["category"], "disk")
 
     def test_evidence_is_copied_from_log(self):
         log = "step 1\n[ERROR] COMPILATION ERROR :\nstep 3"

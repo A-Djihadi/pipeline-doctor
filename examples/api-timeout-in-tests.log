@@ -1,0 +1,21 @@
+##[group]Run ./gradlew test
+> Task :compileJava
+> Task :compileTestJava
+> Task :test
+
+PaymentClientIT > chargesCard() FAILED
+    java.net.SocketTimeoutException: Connect timed out
+        at java.base/sun.nio.ch.NioSocketImpl.timedFinishConnect(NioSocketImpl.java:546)
+        at com.example.pay.PaymentClient.charge(PaymentClient.java:58)
+        at com.example.pay.PaymentClientIT.chargesCard(PaymentClientIT.java:27)
+
+42 tests completed, 1 failed
+
+> Task :test FAILED
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':test'.
+> There were failing tests. See the report at: file:///home/runner/work/pay/build/reports/tests/test/index.html
+##[error]Process completed with exit code 1.

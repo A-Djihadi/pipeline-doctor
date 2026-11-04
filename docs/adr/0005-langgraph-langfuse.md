@@ -18,13 +18,18 @@ Trois besoins ne rentrent plus dans ce modele :
 1. **LangGraph** orchestre le diagnostic (`graph.py`) : etat type `DiagState`, un noeud par
    etape, aretes conditionnelles explicites (`route_after_diagnose`), `interrupt()` +
    checkpointer pour la validation humaine. Nombre d'essais LLM borne (`MAX_ATTEMPTS = 2`).
+   Le re-essai se declenche sur un doute (`doubts`) : confiance < 0.6, mais aussi deux signaux
+   verifiables, car la confiance auto-declaree d'un petit modele varie peu (0.9 sur 36 traces
+   sur 36) : une preuve citee absente du log, ou une categorie differente de celle des regles.
 2. **Langfuse auto-heberge** (`deploy/langfuse/`) trace chaque execution : span par noeud
    (CallbackHandler LangChain), *generation* par appel Ollama (modele, tokens, prompt), scores
-   `confidence`, `evidence_grounded`, `source`. Le prompt systeme est versionne dans Langfuse
-   (label `production`) avec repli sur le prompt du code.
+   `confidence`, `evidence_grounded`, `source`, `category_agreement`. Le prompt systeme est
+   versionne dans Langfuse (label `production`) avec repli sur le prompt du code ;
+   `tracing.sync_prompt` ne publie une version que si le texte a change.
 3. **Evaluation** (`evals.py`) : dataset `examples/` + `expected.json`, evaluateurs
-   deterministes (categorie, mots-cles, ancrage des preuves, absence de fuite de secret),
-   executable en local ou comme *experience* Langfuse.
+   deterministes (categorie du modele, mots-cles attendus et interdits, ancrage des preuves,
+   absence de fuite de secret, correctif sans contournement), executable en local ou comme
+   *experience* Langfuse. Le jeu contient des logs pieges ou les regles voient le symptome.
 4. **Extra optionnel** : `requirements-agent.txt`. Sans lui, la CLI, le webhook et l'agent des
    sessions 1-3 restent 100 % stdlib (ADR-0001 tenu). Sans cles Langfuse, le tracing est un no-op.
 

@@ -76,5 +76,28 @@ class TracingTest(unittest.TestCase):
         self.assertEqual(masked["b"], 3)
 
 
+@unittest.skipIf(graph is None, "extra agent (langgraph, langfuse) non installe")
+class SyncPromptTest(unittest.TestCase):
+    def test_same_text_creates_no_new_version(self):
+        lf = mock.MagicMock()
+        lf.get_prompt.return_value.prompt = tracing.SYSTEM_PROMPT
+        lf.get_prompt.return_value.version = 3
+        self.assertEqual(tracing.sync_prompt(lf), (3, False))
+        lf.create_prompt.assert_not_called()
+
+    def test_changed_text_creates_a_production_version(self):
+        lf = mock.MagicMock()
+        lf.get_prompt.return_value.prompt = "ancien prompt"
+        lf.create_prompt.return_value.version = 4
+        self.assertEqual(tracing.sync_prompt(lf), (4, True))
+        self.assertEqual(lf.create_prompt.call_args.kwargs["labels"], ["production"])
+
+    def test_missing_prompt_is_created(self):
+        lf = mock.MagicMock()
+        lf.get_prompt.side_effect = RuntimeError("404")
+        lf.create_prompt.return_value.version = 1
+        self.assertEqual(tracing.sync_prompt(lf), (1, True))
+
+
 if __name__ == "__main__":
     unittest.main()

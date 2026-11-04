@@ -1,7 +1,7 @@
 """Orchestration du diagnostic en graphe d'etats LangGraph (extra optionnel).
 
-    sanitize -> classify -> diagnose --(confiance OK)-----------------> finalize
-                               |   \\--(confiance basse, 1er essai)--> focus_context -> diagnose
+    sanitize -> classify -> diagnose --(diagnostic fiable)------------> finalize
+                               |   \\--(doute, 1er essai)------------> focus_context -> diagnose
                                \\--(Ollama injoignable)------------> fallback_rules -> finalize
                                                       finalize --(--review)--> human_review
 
@@ -50,11 +50,37 @@ class DiagState(TypedDict, total=False):
     rule_hint: dict          # diagnostic par regles (repli)
     context: str             # ce qui est envoye au modele (log complet ou fenetres d'erreur)
     attempts: int
-    diagnosis: dict          # {cause, evidence, fix, confidence}
+    diagnosis: dict          # {category, cause, evidence, fix, confidence}
     source: str              # "llm" | "rules"
     llm_error: str
     grounded: float          # part des preuves reellement presentes dans le log
+    retry_reasons: list      # doutes qui ont declenche le re-essai (confidence, grounding, category)
     review: str              # "approved" | "rejected" (si --review)
+
+
+def grounding(diagnosis: dict, log: str) -> float:
+    """Part des preuves citees presentes mot pour mot dans le log (0 si aucune preuve)."""
+    evidence = [e for e in diagnosis.get("evidence", []) if isinstance(e, str) and e.strip()]
+    return round(sum(1 for e in evidence if e.strip() in log) / len(evidence), 2) if evidence else 0.0
+
+
+def doubts(state: DiagState) -> list[str]:
+    """Raisons de douter d'un diagnostic LLM, de la plus faible a la plus verifiable.
+
+    La confiance est auto-declaree (un petit modele repond presque toujours 0.9) : on la
+    complete par deux signaux verifiables, l'ancrage des preuves dans le log et l'accord
+    entre la categorie du modele et celle des regles (quand les regles en ont trouve une).
+    """
+    d = state.get("diagnosis") or {}
+    reasons = []
+    if float(d.get("confidence") or 0.0) < CONFIDENCE_THRESHOLD:
+        reasons.append("confidence")
+    if grounding(d, state["log"]) < 1.0:
+        reasons.append("grounding")
+    rules_category, llm_category = state.get("category", "unknown"), d.get("category")
+    if rules_category != "unknown" and llm_category and llm_category != rules_category:
+        reasons.append("category")
+    return reasons
 
 
 # ---------------------------------------------------------------- noeuds
@@ -90,8 +116,8 @@ def diagnose(state: DiagState) -> DiagState:
 
 
 def focus_context(state: DiagState) -> DiagState:
-    """Confiance basse : on re-essaie avec un contexte resserre autour des lignes d'erreur."""
-    return {"context": error_windows(state["log"])}
+    """Diagnostic douteux : on re-essaie avec un contexte resserre autour des lignes d'erreur."""
+    return {"context": error_windows(state["log"]), "retry_reasons": doubts(state)}
 
 
 def fallback_rules(state: DiagState) -> DiagState:
@@ -103,13 +129,15 @@ def fallback_rules(state: DiagState) -> DiagState:
 def finalize(state: DiagState) -> DiagState:
     """Mesure d'ancrage : une preuve citee doit exister dans le log (sinon hallucination)."""
     d = state.get("diagnosis") or {}
-    evidence = [e for e in d.get("evidence", []) if isinstance(e, str) and e.strip()]
-    grounded = (sum(1 for e in evidence if e.strip() in state["log"]) / len(evidence)) if evidence else 0.0
+    grounded = grounding(d, state["log"])
     tracing.score("confidence", float(d.get("confidence") or 0.0))
-    tracing.score("evidence_grounded", round(grounded, 2),
+    tracing.score("evidence_grounded", grounded,
                   comment="part des preuves presentes mot pour mot dans le log")
     tracing.score("source", state.get("source", "none"), data_type="CATEGORICAL")
-    return {"grounded": round(grounded, 2)}
+    if state.get("source") == "llm" and d.get("category") and state.get("category", "unknown") != "unknown":
+        tracing.score("category_agreement", float(d["category"] == state["category"]),
+                      comment="categorie du modele == categorie des regles")
+    return {"grounded": grounded}
 
 
 def human_review(state: DiagState) -> DiagState:
@@ -123,8 +151,7 @@ def human_review(state: DiagState) -> DiagState:
 def route_after_diagnose(state: DiagState) -> Literal["finalize", "focus_context", "fallback_rules"]:
     if state.get("llm_error"):
         return "fallback_rules"
-    confidence = float((state.get("diagnosis") or {}).get("confidence") or 0.0)
-    if confidence < CONFIDENCE_THRESHOLD and state.get("attempts", 0) < MAX_ATTEMPTS:
+    if doubts(state) and state.get("attempts", 0) < MAX_ATTEMPTS:
         return "focus_context"
     return "finalize"
 
@@ -219,6 +246,8 @@ def main(argv=None) -> int:
     d = result.get("diagnosis") or {}
     print(f"[graph] chemin    : {' -> '.join(result['path'])}", file=sys.stderr)
     print(f"[graph] secrets   : {result.get('n_redacted', 0)} masque(s) avant le modele", file=sys.stderr)
+    if result.get("retry_reasons"):
+        print(f"[graph] re-essai  : {', '.join(result['retry_reasons'])}", file=sys.stderr)
     if result.get("llm_error"):
         print(f"[graph] ollama    : indisponible ({result['llm_error'][:80]}) -> repli regles", file=sys.stderr)
     print(f"\nCategorie  : {result.get('category')}")

@@ -9,11 +9,16 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:3b")
 SYSTEM_PROMPT = """Tu es un ingenieur DevOps senior. On te donne le log d'un build CI en echec.
 Reponds UNIQUEMENT avec un objet JSON de cette forme :
 {
-  "cause": "cause probable en une phrase",
-  "evidence": ["lignes exactes du log qui le prouvent"],
+  "category": "une valeur parmi : compilation, tests, dependency, network, oom, registry_auth, config, disk, unknown",
+  "cause": "cause racine probable en une phrase",
+  "evidence": ["lignes copiees mot pour mot depuis le log"],
   "fix": "correctif concret propose, court",
   "confidence": 0.0
 }
+category decrit la cause racine, pas le symptome : un test qui echoue faute de variable
+d'environnement releve de "config", un test qui echoue sur un timeout reseau releve de "network".
+Le correctif doit supprimer la cause. Ne propose jamais de contourner l'erreur : pas de --force,
+--legacy-peer-deps, --no-verify, tests ignores ou desactives, verification TLS coupee.
 confidence est un nombre entre 0 et 1. Si le log ne suffit pas pour conclure, mets une confiance basse
 et dis ce qui manque dans "cause". N'invente jamais de lignes qui ne sont pas dans le log."""
 

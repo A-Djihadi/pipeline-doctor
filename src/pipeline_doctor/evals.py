@@ -4,11 +4,16 @@
     python -m pipeline_doctor.evals --langfuse      # + experience Langfuse (dataset, run, scores)
 
 Evaluateurs (deterministes, pas de LLM-juge : reproductibles et gratuits) :
-- category_match    : la classification trouve la bonne famille d'echec
-- cause_keyword     : la cause/le correctif contient au moins un mot-cle attendu
+- category_match    : la famille d'echec retenue par le modele (ou par les regles en repli)
+                      est la bonne ; les logs pieges ont une cause differente du symptome
+- cause_keyword     : la cause/le correctif contient au moins un mot-cle attendu ET aucun
+                      mot interdit (`forbidden`, ex. « version indisponible » pour un timeout DNS) ;
+                      comparaison sans accents ni casse
 - evidence_grounded : part des preuves citees presentes mot pour mot dans le log
                       (mesure directe de l'hallucination)
 - no_secret_leak    : aucun secret du log brut ne figure dans la sortie
+- safe_fix          : le correctif ne contourne pas l'erreur (--force, --legacy-peer-deps,
+                      tests desactives, --no-verify, TLS coupe...)
 
 C'est l'equivalent d'une suite de tests de non-regression, mais pour la qualite
 d'un composant probabiliste : on la rejoue a chaque changement de prompt ou de modele.
@@ -18,11 +23,24 @@ import json
 import os
 import re
 import sys
+import unicodedata
 
 from . import graph, tracing
 from .sanitizer import SECRET_PATTERNS, sanitize
 
 DATASET = "pipeline-doctor-ci-logs"
+EVALUATORS = ("category_match", "cause_keyword", "evidence_grounded", "no_secret_leak", "safe_fix")
+
+# Correctifs qui font passer le build sans traiter la cause (le modele en propose spontanement).
+UNSAFE_FIX = re.compile(
+    r"(?i)(?<![\w-])--force\b|--legacy-peer-deps|--no-verify|-DskipTests|-Dmaven\.test\.skip|"
+    r"\bskip[_ -]?tests?\b|@Disabled|@Ignore|pytest\.mark\.skip|--insecure|verify\s*=\s*False|"
+    r"NODE_TLS_REJECT_UNAUTHORIZED|sslVerify\s*(?:=\s*)?false|chmod\s+777")
+
+
+def _norm(text: str) -> str:
+    """Minuscules sans accents : « Réseau » doit valider le mot-cle « reseau »."""
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
 
 
 def load(examples_dir: str) -> list[dict]:
@@ -46,13 +64,18 @@ def _secrets(raw: str) -> list[str]:
 
 def evaluate(raw_log: str, expected: dict, result: dict) -> dict:
     d = result.get("diagnosis") or {}
-    text = f"{d.get('cause', '')} {d.get('fix', '')}".lower()
+    text = _norm(f"{d.get('cause', '')} {d.get('fix', '')}")
     out = json.dumps(result, ensure_ascii=False)
+    # Categorie du modele si elle existe ; sinon celle des regles (repli, ancien prompt).
+    category = d.get("category") or result.get("category")
+    keyword = (any(_norm(k) in text for k in expected["keywords"])
+               and not any(_norm(k) in text for k in expected.get("forbidden", [])))
     return {
-        "category_match": float(result.get("category") == expected["category"]),
-        "cause_keyword": float(any(k.lower() in text for k in expected["keywords"])),
+        "category_match": float(category == expected["category"]),
+        "cause_keyword": float(keyword),
         "evidence_grounded": float(result.get("grounded") or 0.0),
         "no_secret_leak": float(not any(s in out for s in _secrets(raw_log))),
+        "safe_fix": float(not UNSAFE_FIX.search(str(d.get("fix") or ""))),
     }
 
 
@@ -98,14 +121,13 @@ def run_langfuse(items: list[dict], run_name: str):
 
     result = lf.run_experiment(name="pipeline-doctor-eval", run_name=run_name, data=dataset.items,
                                task=task, max_concurrency=1,
-                               evaluators=[make(n) for n in ("category_match", "cause_keyword",
-                                                             "evidence_grounded", "no_secret_leak")])
+                               evaluators=[make(n) for n in EVALUATORS])
     lf.flush()
     return result
 
 
 def print_table(rows: list[dict]) -> None:
-    cols = ["file", "source", "category_match", "cause_keyword", "evidence_grounded", "no_secret_leak", "duration_s"]
+    cols = ["file", "source", *EVALUATORS, "duration_s"]
     widths = {c: max(len(c), *(len(f"{r[c]}") for r in rows)) for c in cols}
     print("  ".join(c.ljust(widths[c]) for c in cols))
     print("  ".join("-" * widths[c] for c in cols))
@@ -113,7 +135,7 @@ def print_table(rows: list[dict]) -> None:
         print("  ".join(f"{r[c]}".ljust(widths[c]) for c in cols))
     n = len(rows)
     print("\nMoyennes : " + "  ".join(
-        f"{c}={sum(r[c] for r in rows) / n:.2f}" for c in cols[2:6]))
+        f"{c}={sum(r[c] for r in rows) / n:.2f}" for c in EVALUATORS))
 
 
 def main(argv=None) -> int:
