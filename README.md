@@ -6,7 +6,7 @@
 
 Agent qui lit le log d'un build CI en echec et propose un diagnostic : cause probable, preuves tirees du log, correctif suggere.
 
-> Statut : sessions 1-3 faites (CLI, webhook Slack, agent auto-heberge). Decision : Ollama only — aucune cle API cloud, pas d'escalade (ADR-0004).
+> Statut : sessions 1-3 faites (CLI, webhook Slack, agent auto-heberge) + mode graphe LangGraph tracé dans Langfuse (ADR-0005). Decision : Ollama only — aucune cle API cloud, pas d'escalade (ADR-0004).
 
 ![architecture](docs/architecture.png)
 *(source modifiable : `docs/architecture.excalidraw`, a ouvrir sur excalidraw.com)*
@@ -15,7 +15,7 @@ Agent qui lit le log d'un build CI en echec et propose un diagnostic : cause pro
 - **Lecture seule** : l'agent propose, il n'applique rien.
 - **Secrets masques** avant tout envoi a un modele (tokens, mots de passe, cles AWS, URLs avec identifiants).
 - **Local only** : Ollama traite tous les diagnostics, aucun modele cloud (ni DeepSeek, ni Claude), aucune cle API cloud.
-- **Zero dependance** : bibliotheque standard Python uniquement.
+- **Zero dependance** pour le coeur : bibliotheque standard Python uniquement. LangGraph et Langfuse sont un extra optionnel (`requirements-agent.txt`).
 
 ## Utilisation
 ```bash
@@ -45,9 +45,45 @@ un run est traite une seule fois.
 - Lancer : `PD_REPO=... GITHUB_TOKEN=... python -m pipeline_doctor.agent --once` (ou `--interval 300`).
 - Voir [deploy/](deploy/) (systemd + cron) et [ADR-0003](docs/adr/0003-agent-auto-heberge.md).
 
+## Mode graphe : LangGraph + Langfuse (ADR-0005)
+
+![graphe LangGraph](docs/graph.png)
+
+Le diagnostic devient un **graphe d'etats** : chaque etape est un noeud, chaque decision une arete.
+
+| Noeud | Role |
+|---|---|
+| `sanitize` | masque les secrets, tronque (rien de brut ne va plus loin) |
+| `classify` | regles deterministes : categorie d'echec (compilation, dependances, tests, OOM, registre, reseau, config) |
+| `diagnose` | appel Ollama ; *generation* Langfuse (prompt versionne, tokens, latence) |
+| `focus_context` | confiance < 0.6 : 2e essai avec les seules fenetres d'erreur (max 2 essais) |
+| `fallback_rules` | Ollama indisponible : diagnostic par regles, marque `source=rules` |
+| `finalize` | scores : `confidence`, `evidence_grounded` (preuves presentes dans le log = anti-hallucination) |
+| `human_review` | `--review` : `interrupt()` + checkpointer, le graphe attend une validation humaine |
+
+```bash
+pip install -r requirements-agent.txt
+PYTHONPATH=src python -m pipeline_doctor.graph examples/maven-compile-error.log          # diagnostic
+PYTHONPATH=src python -m pipeline_doctor.graph examples/oom-killed.log --review          # avec validation
+PYTHONPATH=src python -m pipeline_doctor.graph --mermaid                                 # schema
+PYTHONPATH=src python -m pipeline_doctor.evals                                           # evaluation
+PD_ENGINE=graph python -m pipeline_doctor.agent --once                                   # agent en mode graphe
+```
+
+**Traces** : demarrer Langfuse en local (`deploy/langfuse/up.sh` ou `up.ps1`), exporter
+`LANGFUSE_BASE_URL`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` ; chaque diagnostic affiche
+l'URL de sa trace. `evals --langfuse` cree le dataset et lance une *experience* comparable
+entre modeles / versions de prompt. Sans cles, le tracing est desactive (no-op).
+
+**Evaluation** (`examples/` + `expected.json`, 6 logs) : `category_match`, `cause_keyword`,
+`evidence_grounded`, `no_secret_leak`. Le repli par regles sert de *baseline* (100 % sur ce jeu,
+construit pour elles) ; un modele ou un prompt n'est adopte que s'il fait au moins aussi bien
+sur l'ancrage des preuves et zero fuite. La CI rejoue l'evaluation et echoue sur toute fuite.
+
 ## Tests
 ```bash
-PYTHONPATH=src python -m unittest discover -s tests -v
+PYTHONPATH=src python -m unittest discover -s tests -v   # stdlib : tests du graphe ignores
+pip install -r requirements-agent.txt && PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
 ## Feuille de route
@@ -55,6 +91,7 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 - [x] 2. Webhook GitHub Actions + notification Slack (log nettoye, sans LLM)
 - [x] 3. Agent auto-heberge : poll GitHub -> Ollama -> Slack (diagnostic continu)
 - [x] ~~4. Escalade vers DeepSeek / Claude si confiance < seuil~~ *(decision : Ollama only, pas d'escalade cloud — ADR-0004)*
+- [x] 5a. Graphe LangGraph (re-essai, repli, validation humaine) + traces et evaluations Langfuse (ADR-0005)
 - [ ] 5. Journal des diagnostics (UI), demo video, article
 - [ ] v2. Support Jenkins, ouverture de PR avec validation humaine
 
