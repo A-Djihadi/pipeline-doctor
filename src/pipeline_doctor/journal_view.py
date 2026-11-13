@@ -3,9 +3,11 @@
 Ce module ne fait que CONSULTER la base ecrite par ``journal.py`` : il ne cree,
 ne migre et ne modifie jamais la table ``diagnostics``.
 """
+import html
 import json
 import os
 import sqlite3
+import time
 
 _COLUMNS = "run_id, repo, workflow, branch, cause, confidence, fix, evidence, status, processed_at"
 _FIELDS = ["run_id", "repo", "workflow", "branch", "cause", "confidence",
@@ -134,3 +136,71 @@ def format_detail(row):
     for line in row["evidence"] or []:
         lines.append(f"  - {line}")
     return "\n".join(lines) + "\n"
+
+
+_HTML_HEADERS = ["RUN_ID", "STATUS", "CONF", "REPO", "WORKFLOW", "BRANCH", "CAUSE", "FIX"]
+
+_STYLE = """
+body { font-family: system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
+th { background: #f0f0f0; }
+details { margin: 0.25rem 0; }
+summary { cursor: pointer; }
+"""
+
+
+def _html_cells(row):
+    esc = html.escape
+    return [
+        esc(str(row["run_id"])),
+        esc(str(row["status"])),
+        esc(_fmt_confidence(row["confidence"])),
+        esc(str(row["repo"])),
+        esc(_val(row["workflow"])),
+        esc(_val(row["branch"])),
+        esc(_val(row["cause"])),
+        esc(_val(row["fix"])),
+    ]
+
+
+def render_html(rows, *, db_path=""):
+    """Rend la liste en page HTML autonome (CSS inline, zero JS, zero asset externe)."""
+    esc = html.escape
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    parts = [
+        "<!doctype html>",
+        '<html lang="fr">',
+        "<head>",
+        '<meta charset="utf-8">',
+        "<title>Diagnostic journal</title>",
+        f"<style>{_STYLE}</style>",
+        "</head>",
+        "<body>",
+        "<h1>Diagnostic journal</h1>",
+        f"<p>Generated at {esc(now)}</p>",
+    ]
+    if db_path:
+        parts.append(f"<p>Database: {esc(db_path)}</p>")
+    if not rows:
+        parts.append("<p>No diagnostics recorded.</p>")
+    else:
+        parts.append("<table>")
+        parts.append(
+            "<thead><tr>" + "".join(f"<th>{esc(h)}</th>" for h in _HTML_HEADERS) + "</tr></thead>"
+        )
+        parts.append("<tbody>")
+        for row in rows:
+            parts.append("<tr>" + "".join(f"<td>{c}</td>" for c in _html_cells(row)) + "</tr>")
+            evidence = row["evidence"] or []
+            items = "".join(f"<li>{esc(str(line))}</li>" for line in evidence)
+            parts.append(
+                f'<tr><td colspan="{len(_HTML_HEADERS)}">'
+                f"<details><summary>Evidence ({len(evidence)})</summary><ul>{items}</ul></details>"
+                "</td></tr>"
+            )
+        parts.append("</tbody>")
+        parts.append("</table>")
+    parts.append("</body>")
+    parts.append("</html>")
+    return "\n".join(parts) + "\n"

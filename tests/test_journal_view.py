@@ -159,5 +159,58 @@ class FormatDetailTest(unittest.TestCase):
         self.assertIn("fix", out)
 
 
+class RenderHtmlTest(unittest.TestCase):
+    def _rows(self, entries):
+        conn = journal.init(":memory:")
+        for run_id, diagnosis, status in entries:
+            journal.record(conn, run_id, "a/b", "ci.yml", "main", diagnosis, status)
+        rows = journal_view.list_diagnostics(conn)
+        conn.close()
+        return rows
+
+    def test_doctype_and_close(self):
+        html = journal_view.render_html(self._rows([(1, None, "llm_error")]))
+        self.assertTrue(html.startswith("<!doctype html>"))
+        self.assertTrue(html.endswith("</html>\n"))
+
+    def test_style_no_script(self):
+        html = journal_view.render_html(self._rows([(1, None, "llm_error")]))
+        self.assertIn("<style>", html)
+        self.assertNotIn("<script", html.lower())
+
+    def test_no_external_assets(self):
+        html = journal_view.render_html(self._rows([(1, None, "llm_error")]))
+        self.assertNotIn('src="http', html)
+        self.assertNotIn('href="http', html)
+        self.assertNotIn("<link", html)
+        self.assertNotIn("<img", html)
+
+    def test_escapes_html_injection(self):
+        rows = self._rows([(1, {"cause": "<script>alert(1)</script>",
+                                "confidence": 0.9, "fix": "f", "evidence": []}, "diagnosed")])
+        html = journal_view.render_html(rows)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertNotIn("<script>alert", html)
+
+    def test_evidence_in_details(self):
+        rows = self._rows([(1, {"cause": "c", "confidence": 0.9, "fix": "f",
+                                "evidence": ["e1", "e2"]}, "diagnosed")])
+        html = journal_view.render_html(rows)
+        self.assertIn("<details>", html)
+        self.assertIn("e1", html)
+
+    def test_empty_page(self):
+        html = journal_view.render_html([])
+        self.assertTrue(html.startswith("<!doctype html>"))
+        self.assertIn("No diagnostics recorded.", html)
+        self.assertTrue(html.endswith("</html>\n"))
+
+    def test_preserves_accents(self):
+        rows = self._rows([(1, {"cause": "échec de build", "confidence": 0.9,
+                                "fix": "f", "evidence": []}, "diagnosed")])
+        html = journal_view.render_html(rows)
+        self.assertIn("échec de build", html)
+
+
 if __name__ == "__main__":
     unittest.main()
