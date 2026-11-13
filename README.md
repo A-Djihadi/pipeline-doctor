@@ -27,6 +27,16 @@ cat build.log | python -m pipeline_doctor -                            # depuis 
 ```
 Variables : `OLLAMA_URL` (defaut `http://localhost:11434`), `OLLAMA_MODEL`.
 
+### Journal des diagnostics (lecture seule)
+```bash
+python -m pipeline_doctor journal                                    # 20 derniers diagnostics (tableau texte)
+python -m pipeline_doctor journal show 12345                         # detail complet d'un run
+python -m pipeline_doctor journal --html                             # page HTML autonome (CSS inline, zero JS)
+python -m pipeline_doctor journal --repo owner/repo --status llm_error --limit 50
+```
+- Base lue par defaut : `$PD_DB`, sinon `diagnostics.db` (la meme que l'agent). `--db <fichier>` pour en lire une autre.
+- Lecture seule : le journal n'est jamais cree ni modifie ; un fichier absent est traite comme un journal vide.
+
 ## Webhook GitHub Actions + Slack
 Quand la CI (`ci.yml`) echoue, le workflow [`diagnose.yml`](.github/workflows/diagnose.yml) se declenche
 automatiquement (evenement `workflow_run`), recupere le log des jobs en echec, le nettoie (sanitizer)
@@ -97,7 +107,9 @@ pip install -r requirements-agent.txt && PYTHONPATH=src python -m unittest disco
 - [x] 3. Agent auto-heberge : poll GitHub -> Ollama -> Slack (diagnostic continu)
 - [x] ~~4. Escalade vers DeepSeek / Claude si confiance < seuil~~ *(decision : Ollama only, pas d'escalade cloud — ADR-0004)*
 - [x] 5a. Graphe LangGraph (re-essai, repli, validation humaine) + traces et evaluations Langfuse (ADR-0005)
-- [ ] 5. Journal des diagnostics (UI), demo video, article
+- [x] 5. Journal des diagnostics (UI) — consultation en CLI (`journal`, `journal show`) + export HTML
+- [ ] 5b. Demo video
+- [ ] 5c. Article
 - [ ] v2. Support Jenkins, ouverture de PR avec validation humaine
 
 ## Securite et documentation

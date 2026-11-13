@@ -92,6 +92,26 @@ class JournalCliTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertIn("No diagnostics recorded.", out)
 
+    def test_lists_both_and_filters_status(self):
+        self._seed()
+        rc, out, err = self._run(["journal", "--db", self.db])
+        self.assertEqual(rc, 0)
+        self.assertIn("101", out)
+        self.assertIn("102", out)
+        self.assertIn("llm_error", out)
+
+        rc2, out2, err2 = self._run(["journal", "--db", self.db, "--status", "llm_error"])
+        self.assertEqual(rc2, 0)
+        self.assertIn("102", out2)
+        self.assertNotIn("101", out2)
+
+    def test_show_llm_error_renders_dash_cause(self):
+        self._seed()
+        rc, out, err = self._run(["journal", "show", "102", "--db", self.db])
+        self.assertEqual(rc, 0)
+        self.assertIn("cause", out)
+        self.assertIn(": -", out)
+
 
 if __name__ == "__main__":
     unittest.main()
