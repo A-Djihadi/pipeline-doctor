@@ -3,10 +3,11 @@
 On ne fait que LIRE : lister les jobs d'un run, recuperer le log d'un job.
 Aucune dependance tierce, aucune ecriture sur le depot.
 """
+import base64
 import json
 import os
 import urllib.request
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 API_URL = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 
@@ -68,3 +69,48 @@ def failed_job_ids(jobs: list[dict]) -> list[int]:
 
 def run_url(repo: str, run_id: str) -> str:
     return f"https://github.com/{repo}/actions/runs/{run_id}"
+
+
+# ---------------------------------------------------------------- helpers fix flow (GET only)
+
+def get_tree(repo: str, sha: str, token: str) -> tuple[dict[str, str], bool]:
+    """Arbre Git recursif du commit : ({path: mode} pour les blobs, truncated)."""
+    url = f"{API_URL}/repos/{repo}/git/trees/{sha}?recursive=1"
+    data = json.loads(_request(url, token))
+    tree = {entry["path"]: entry["mode"]
+            for entry in data.get("tree", []) if entry.get("type") == "blob"}
+    return tree, bool(data.get("truncated"))
+
+
+def get_file(repo: str, path: str, sha: str, token: str) -> str | None:
+    """Contenu UTF-8 d'un fichier au commit `sha` (None si non UTF-8 ou absent)."""
+    url = f"{API_URL}/repos/{repo}/contents/{quote(path, safe='/')}?ref={sha}"
+    data = json.loads(_request(url, token))
+    content = data.get("content")
+    if content is None:
+        return None
+    try:
+        return base64.b64decode(content).decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def branch_sha(repo: str, branch: str, token: str) -> str:
+    """SHA du tip d'une branche."""
+    url = f"{API_URL}/repos/{repo}/branches/{quote(branch, safe='/')}"
+    data = json.loads(_request(url, token))
+    return data["commit"]["sha"]
+
+
+def open_fix_prs(repo: str, base: str, fork_owner: str, token: str) -> list[int]:
+    """Numeros des PR ouvertes du bot sur cette base (head du fork + prefixe fix)."""
+    url = f"{API_URL}/repos/{repo}/pulls?state=open&base={base}&per_page=100"
+    data = json.loads(_request(url, token))
+    out: list[int] = []
+    for pr in data:
+        head = pr.get("head") or {}
+        ref = head.get("ref") or ""
+        owner = ((head.get("repo") or {}).get("owner") or {}).get("login")
+        if owner == fork_owner and ref.startswith("pipeline-doctor/fix-"):
+            out.append(pr["number"])
+    return out
