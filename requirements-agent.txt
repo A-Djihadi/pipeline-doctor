@@ -1,4 +1,4 @@
 # Extra optionnel « agent » (ADR-0005) : le coeur reste stdlib.
 # pip install -r requirements-agent.txt
 langgraph==1.2.19
-langfuse==5.1.0
+langfuse==5.2.0
