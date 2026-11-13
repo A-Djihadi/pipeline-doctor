@@ -30,7 +30,7 @@ from langgraph.types import Command, interrupt
 from . import tracing
 from .llm import chat
 from .rules import classify as rules_classify
-from .rules import error_windows
+from .rules import error_windows, grounding
 from .sanitizer import sanitize as sanitize_log
 
 CONFIDENCE_THRESHOLD = 0.6
@@ -56,12 +56,6 @@ class DiagState(TypedDict, total=False):
     grounded: float          # part des preuves reellement presentes dans le log
     retry_reasons: list      # doutes qui ont declenche le re-essai (confidence, grounding, category)
     review: str              # "approved" | "rejected" (si --review)
-
-
-def grounding(diagnosis: dict, log: str) -> float:
-    """Part des preuves citees presentes mot pour mot dans le log (0 si aucune preuve)."""
-    evidence = [e for e in diagnosis.get("evidence", []) if isinstance(e, str) and e.strip()]
-    return round(sum(1 for e in evidence if e.strip() in log) / len(evidence), 2) if evidence else 0.0
 
 
 def doubts(state: DiagState) -> list[str]:

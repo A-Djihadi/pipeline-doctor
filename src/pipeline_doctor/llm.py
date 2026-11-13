@@ -28,12 +28,16 @@ def ask_ollama(log: str, timeout: int = 180) -> dict:
     return chat(SYSTEM_PROMPT, log, timeout=timeout)[0]
 
 
-def chat(system_prompt: str, log: str, timeout: int = 180, model: str | None = None) -> tuple[dict, dict]:
+def chat(system_prompt: str, log: str, timeout: int = 180, model: str | None = None,
+         user_template: str = "Log du build en echec :\n\n{log}") -> tuple[dict, dict]:
     """Appel Ollama /api/chat. Retourne (diagnostic JSON, meta).
 
     meta contient le modele, les parametres et l'usage en tokens rapportes par Ollama
     (prompt_eval_count / eval_count) : c'est ce que le graphe envoie a Langfuse
     pour suivre cout (ici en tokens, le modele est local) et latence.
+
+    `user_template` met en forme le log ; `.format` ne s'applique JAMAIS au log
+    lui-meme (les accolades d'un log casseraient le formatage).
     """
     model = model or OLLAMA_MODEL
     options = {"temperature": 0.1}
@@ -44,7 +48,7 @@ def chat(system_prompt: str, log: str, timeout: int = 180, model: str | None = N
         "options": options,
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Log du build en echec :\n\n{log}"},
+            {"role": "user", "content": user_template.format(log=log)},
         ],
     }
     req = urllib.request.Request(

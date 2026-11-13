@@ -3,7 +3,12 @@ import json
 import os
 import unittest
 
-from pipeline_doctor.rules import classify, error_windows
+try:
+    from pipeline_doctor import evals, graph
+except ImportError:  # langgraph absent : CI stdlib
+    evals = graph = None
+
+from pipeline_doctor.rules import classify, error_windows, grounding, UNSAFE_FIX
 
 EXAMPLES = os.path.join(os.path.dirname(__file__), "..", "examples")
 
@@ -49,6 +54,26 @@ class ErrorWindowsTest(unittest.TestCase):
 
     def test_falls_back_to_tail(self):
         self.assertEqual(error_windows("a\nb\nc", max_chars=3), "b\nc"[-3:])
+
+
+class SharedHelpersTest(unittest.TestCase):
+    def test_grounding_fraction_of_evidence_present(self):
+        self.assertEqual(grounding({"evidence": ["a", "zz"]}, "a b"), 0.5)
+
+    def test_grounding_no_evidence_is_zero(self):
+        self.assertEqual(grounding({"evidence": []}, "a b"), 0.0)
+
+    def test_unsafe_fix_matches_bypass_flags(self):
+        self.assertTrue(UNSAFE_FIX.search("mvn -DskipTests"))
+        self.assertIsNone(UNSAFE_FIX.search("mvn verify"))
+
+    @unittest.skipIf(graph is None, "langgraph non installe")
+    def test_graph_grounding_is_rules_grounding(self):
+        self.assertIs(graph.grounding, grounding)
+
+    @unittest.skipIf(evals is None, "langgraph non installe")
+    def test_evals_unsafe_fix_is_rules_unsafe_fix(self):
+        self.assertIs(evals.UNSAFE_FIX, UNSAFE_FIX)
 
 
 if __name__ == "__main__":
