@@ -90,5 +90,74 @@ class GetDiagnosticTest(unittest.TestCase):
         conn.close()
 
 
+class FormatTableTest(unittest.TestCase):
+    def _rows(self, entries):
+        conn = journal.init(":memory:")
+        for run_id, repo, diagnosis, status in entries:
+            journal.record(conn, run_id, repo, "ci.yml", "main", diagnosis, status)
+        rows = journal_view.list_diagnostics(conn)
+        conn.close()
+        return rows
+
+    def test_empty(self):
+        self.assertEqual(journal_view.format_table([]), "No diagnostics recorded.\n")
+
+    def test_header_and_rows(self):
+        rows = self._rows([
+            (101, "a/b", {"cause": "c", "confidence": 0.9, "fix": "f", "evidence": ["e1"]}, "diagnosed"),
+            (102, "a/b", None, "llm_error"),
+        ])
+        out = journal_view.format_table(rows)
+        self.assertIn("RUN_ID", out)
+        self.assertIn("STATUS", out)
+        self.assertIn("0.90", out)
+        self.assertIn("-", out)
+        self.assertEqual(out.count("\n"), 3)  # header + 2 rows
+
+    def test_llm_error_renders_dashes(self):
+        rows = self._rows([(102, "a/b", None, "llm_error")])
+        out = journal_view.format_table(rows)
+        self.assertIn("llm_error", out)
+        self.assertIn("-", out)
+
+
+class FormatDetailTest(unittest.TestCase):
+    def _row(self, diagnosis, status):
+        conn = journal.init(":memory:")
+        journal.record(conn, 101, "a/b", "ci.yml", "main", diagnosis, status)
+        row = journal_view.get_diagnostic(conn, 101)
+        conn.close()
+        return row
+
+    def test_labels_and_evidence(self):
+        row = self._row(
+            {"cause": "c", "confidence": 0.9, "fix": "f", "evidence": ["e1", "e2"]},
+            "diagnosed",
+        )
+        out = journal_view.format_detail(row)
+        for label in ("run_id", "repo", "workflow", "branch", "status",
+                      "cause", "confidence", "fix", "processed_at", "evidence"):
+            self.assertIn(label, out)
+        self.assertIn("  - e1", out)
+        self.assertIn("  - e2", out)
+
+    def test_empty_evidence_no_bullets(self):
+        row = self._row(
+            {"cause": "c", "confidence": 0.9, "fix": "f", "evidence": []},
+            "diagnosed",
+        )
+        out = journal_view.format_detail(row)
+        self.assertIn("evidence:", out)
+        self.assertNotIn("  - ", out)
+
+    def test_llm_error_renders_dashes(self):
+        row = self._row(None, "llm_error")
+        out = journal_view.format_detail(row)
+        self.assertIn("cause", out)
+        self.assertIn(": -", out)
+        self.assertIn("confidence", out)
+        self.assertIn("fix", out)
+
+
 if __name__ == "__main__":
     unittest.main()
