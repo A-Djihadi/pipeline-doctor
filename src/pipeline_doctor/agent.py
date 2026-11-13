@@ -30,6 +30,7 @@ import time
 
 from .github import failed_job_ids, job_log, list_jobs, list_runs, run_url
 from .jenkins import JenkinsError, build_url, check_base_url, console_log, list_failed_builds
+from .fixflow import FixSettings, run_fix
 from .journal import init as init_journal
 from .journal import is_build_processed, is_processed, record, record_build
 from .llm import ask_ollama
@@ -65,7 +66,7 @@ def _diagnose(raw, cleaned, session_id, metadata):
     return diagnosis, status, source
 
 
-def poll_once(repo, token, workflow, db_path, webhook, dry_run=False):
+def poll_once(repo, token, workflow, db_path, webhook, dry_run=False, fix=None):
     """Un passage : traite les runs en echec non encore vus. Retourne le nombre traite."""
     conn = init_journal(db_path)
     processed = 0
@@ -89,7 +90,7 @@ def poll_once(repo, token, workflow, db_path, webhook, dry_run=False):
             raw = "\n\n".join(job_log(repo, str(jid), token) for jid in failed)
             cleaned, n_redacted = sanitize(raw, MAX_CHARS)
 
-            diagnosis, status, _ = _diagnose(
+            diagnosis, status, source = _diagnose(
                 raw, cleaned, session_id=f"{repo}#{run_id}",
                 metadata={"repo": repo, "run_id": run_id, "branch": branch},
             )
@@ -102,20 +103,25 @@ def poll_once(repo, token, workflow, db_path, webhook, dry_run=False):
             if dry_run:
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
                 processed += 1
-                continue
-
-            if webhook:
-                try:
-                    send(webhook, payload)
-                except Exception as exc:
-                    print(f"[agent] envoi Slack impossible (run {run_id}) : {exc}", file=sys.stderr)
-                    status = "notify_error"
             else:
-                print("SLACK_WEBHOOK_URL absent : notification ignoree.", file=sys.stderr)
+                if webhook:
+                    try:
+                        send(webhook, payload)
+                    except Exception as exc:
+                        print(f"[agent] envoi Slack impossible (run {run_id}) : {exc}", file=sys.stderr)
+                        status = "notify_error"
+                else:
+                    print("SLACK_WEBHOOK_URL absent : notification ignoree.", file=sys.stderr)
 
-            record(conn, run_id, repo, workflow, branch, diagnosis, status)
-            processed += 1
-            print(f"[agent] run {run_id} traite (status={status}).", file=sys.stderr)
+                record(conn, run_id, repo, workflow, branch, diagnosis, status)
+                processed += 1
+                print(f"[agent] run {run_id} traite (status={status}).", file=sys.stderr)
+
+            if fix is not None:
+                try:
+                    run_fix(conn, repo, run, diagnosis, source, cleaned, fix, webhook, dry_run)
+                except Exception as exc:
+                    print(f"[agent] correctif impossible (run {run_id}) : {exc}", file=sys.stderr)
     finally:
         conn.close()
     return processed
@@ -238,11 +244,42 @@ def main(argv=None) -> int:
     db_path = os.environ.get("PD_DB", "diagnostics.db")
     webhook = os.environ.get("SLACK_WEBHOOK_URL", "")
 
+    fix = None
+    fix_mode = os.environ.get("PD_FIX_MODE", "off")
+    if fix_mode not in ("off", "propose", "pr"):
+        print(f"PD_FIX_MODE invalide : « {fix_mode} ».", file=sys.stderr)
+        return 2
+    if fix_mode != "off":
+        if "github" not in sources:
+            print("PD_FIX_MODE ignore : la source « github » n'est pas activee.", file=sys.stderr)
+        else:
+            if fix_mode == "pr":
+                missing = [name for name in ("PD_FIX_FORK", "PD_FIX_TOKEN")
+                           if not os.environ.get(name)]
+                if missing:
+                    print(f"Variables manquantes : {', '.join(missing)}.", file=sys.stderr)
+                    return 2
+                if os.environ.get("PD_FIX_TOKEN", "") == token:
+                    print("PD_FIX_TOKEN doit differer de GITHUB_TOKEN.", file=sys.stderr)
+                    return 2
+            try:
+                max_per_day = int(os.environ.get("PD_FIX_MAX_PER_DAY", "3"))
+            except ValueError:
+                max_per_day = 3
+            fix = FixSettings(
+                mode=fix_mode,
+                read_token=token,
+                fork=os.environ.get("PD_FIX_FORK") if fix_mode == "pr" else None,
+                write_token=os.environ.get("PD_FIX_TOKEN") if fix_mode == "pr" else None,
+                max_per_day=max_per_day,
+            )
+
     def _pass():
         for source in sources:
             try:
                 if source == "github":
-                    poll_once(repo, token, workflow, db_path, webhook, dry_run=args.dry_run)
+                    poll_once(repo, token, workflow, db_path, webhook,
+                              dry_run=args.dry_run, fix=fix)
                 elif source == "jenkins":
                     poll_jenkins_once(jenkins_cfg["base"], jenkins_cfg["jobs"],
                                       jenkins_cfg["user"], jenkins_cfg["token"],
