@@ -7,7 +7,8 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
-from pipeline_doctor import agent, journal
+from pipeline_doctor import agent, fixflow, journal
+from pipeline_doctor.fixflow import FixSettings
 
 try:
     from pipeline_doctor import graph
@@ -21,7 +22,8 @@ FAKE_JENKINS_TOKEN = "jenkins-api-token"
 def _clean_env():
     for name in ("PD_SOURCES", "PD_REPO", "GITHUB_REPOSITORY", "GITHUB_TOKEN",
                  "PD_JENKINS_URL", "PD_JENKINS_JOBS", "PD_JENKINS_USER",
-                 "PD_JENKINS_TOKEN", "PD_ENGINE"):
+                 "PD_JENKINS_TOKEN", "PD_ENGINE", "PD_FIX_MODE", "PD_FIX_FORK",
+                 "PD_FIX_TOKEN", "PD_FIX_MAX_PER_DAY"):
         os.environ.pop(name, None)
 
 
@@ -259,6 +261,139 @@ class JenkinsGraphTest(unittest.TestCase):
         self.assertEqual(source, "rules")
         self.assertEqual(diagnosis, {"cause": "c"})
         run.assert_called_once()
+
+
+class FixModeTest(unittest.TestCase):
+    def tearDown(self):
+        _clean_env()
+
+    def test_bogus_fix_mode_returns_2(self):
+        _clean_env()
+        os.environ["PD_REPO"] = "o/r"
+        os.environ["GITHUB_TOKEN"] = FAKE_GITHUB_TOKEN
+        os.environ["PD_FIX_MODE"] = "bogus"
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = agent.main(["--once"])
+        self.assertEqual(rc, 2)
+        self.assertIn("PD_FIX_MODE", err.getvalue())
+
+    def test_propose_with_jenkins_only_warns_and_never_fixes(self):
+        _clean_env()
+        os.environ["PD_SOURCES"] = "jenkins"
+        os.environ["PD_FIX_MODE"] = "propose"
+        os.environ["PD_JENKINS_URL"] = "https://jenkins.lan"
+        os.environ["PD_JENKINS_JOBS"] = "team/app"
+        os.environ["PD_JENKINS_USER"] = "bot"
+        os.environ["PD_JENKINS_TOKEN"] = FAKE_JENKINS_TOKEN
+        err = io.StringIO()
+        with mock.patch.object(agent, "poll_jenkins_once", return_value=0), \
+                mock.patch.object(agent, "run_fix") as run_fix, \
+                redirect_stderr(err):
+            rc = agent.main(["--once"])
+        self.assertEqual(rc, 0)
+        run_fix.assert_not_called()
+        self.assertIn("PD_FIX_MODE", err.getvalue())
+
+    def test_fix_mode_unset_never_calls_run_fix(self):
+        _clean_env()
+        os.environ["PD_REPO"] = "o/r"
+        os.environ["GITHUB_TOKEN"] = FAKE_GITHUB_TOKEN
+        with mock.patch.object(agent, "poll_once", return_value=0) as poll_once, \
+                mock.patch.object(agent, "run_fix") as run_fix:
+            rc = agent.main(["--once"])
+        self.assertEqual(rc, 0)
+        poll_once.assert_called_once()
+        run_fix.assert_not_called()
+        self.assertIsNone(poll_once.call_args.kwargs.get("fix"))
+
+    def test_pr_mode_requires_fork_and_token(self):
+        _clean_env()
+        os.environ["PD_REPO"] = "o/r"
+        os.environ["GITHUB_TOKEN"] = FAKE_GITHUB_TOKEN
+        os.environ["PD_FIX_MODE"] = "pr"
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = agent.main(["--once"])
+        self.assertEqual(rc, 2)
+        self.assertIn("PD_FIX_FORK", err.getvalue())
+
+    def test_pr_mode_token_must_differ_from_github_token(self):
+        _clean_env()
+        os.environ["PD_REPO"] = "o/r"
+        os.environ["GITHUB_TOKEN"] = FAKE_GITHUB_TOKEN
+        os.environ["PD_FIX_MODE"] = "pr"
+        os.environ["PD_FIX_FORK"] = "bot/r"
+        os.environ["PD_FIX_TOKEN"] = FAKE_GITHUB_TOKEN
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = agent.main(["--once"])
+        self.assertEqual(rc, 2)
+        self.assertIn("PD_FIX_TOKEN", err.getvalue())
+        self.assertNotIn(FAKE_GITHUB_TOKEN, err.getvalue())
+
+
+class PollOnceFixTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.db = os.path.join(self._tmp.name, "diag.db")
+        self.repo = "A-Djihadi/pipeline-doctor"
+        self.token = "t"
+        self.failed_run = {"id": 101, "name": "CI", "head_branch": "main", "head_sha": "abc123",
+                           "conclusion": "failure",
+                           "head_repository": {"full_name": "A-Djihadi/pipeline-doctor"}}
+        self.job = {"id": 7, "conclusion": "failure"}
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _diagnosis(self):
+        return {"category": "compilation", "cause": "c",
+                "evidence": ["[ERROR] App.java:[12,5] cannot find symbol"], "fix": "f",
+                "confidence": 0.9}
+
+    def test_fix_slack_message_sent_after_diagnosis(self):
+        log = "[ERROR] App.java:[12,5] cannot find symbol\n[ERROR] COMPILATION ERROR"
+        settings = FixSettings(mode="propose", read_token="t", fork=None, write_token=None)
+        fake_edit = {"edits": [{"path": "src/main/java/App.java", "search": "bar();",
+                                "replace": "foo();"}], "summary": "call foo", "confidence": 0.8}
+        with mock.patch.object(agent, "list_runs", return_value=[self.failed_run]), \
+                mock.patch.object(agent, "list_jobs", return_value=[self.job]), \
+                mock.patch.object(agent, "job_log", return_value=log), \
+                mock.patch.object(agent, "ask_ollama", return_value=self._diagnosis()), \
+                mock.patch.object(agent, "send") as diag_send, \
+                mock.patch.object(fixflow.github, "branch_sha", return_value="abc123"), \
+                mock.patch.object(fixflow.github, "get_tree",
+                                  return_value=({"src/main/java/App.java": "100644"}, False)), \
+                mock.patch.object(fixflow.github, "get_file",
+                                  return_value="class App {\n  void run() { bar(); }\n}\n"), \
+                mock.patch.object(fixflow.github, "open_fix_prs", return_value=[]), \
+                mock.patch.object(fixflow, "_default_ask", return_value=fake_edit), \
+                mock.patch.object(fixflow, "send") as fix_send:
+            n = agent.poll_once(self.repo, self.token, "ci.yml", self.db,
+                                "https://hooks/x", fix=settings)
+        self.assertEqual(n, 1)
+        diag_send.assert_called_once()
+        fix_send.assert_called_once()
+        self.assertIn("call foo", json.dumps(fix_send.call_args[0][1]))
+        conn = journal.init(self.db)
+        row = conn.execute("SELECT status, diff FROM fix_proposals").fetchone()
+        self.assertEqual(row[0], "proposed")
+        self.assertIsNotNone(row[1])
+        conn.close()
+
+
+class EnvExampleTest(unittest.TestCase):
+    V2_VARS = ("PD_SOURCES", "PD_JENKINS_URL", "PD_JENKINS_JOBS", "PD_JENKINS_USER",
+               "PD_JENKINS_TOKEN", "PD_JENKINS_PER_JOB", "PD_JENKINS_MAX_LOG_BYTES",
+               "PD_FIX_MODE", "PD_FIX_FORK", "PD_FIX_TOKEN", "PD_FIX_MAX_PER_DAY")
+
+    def test_all_v2_variables_present(self):
+        path = os.path.join(os.path.dirname(__file__), "..", ".env.example")
+        with open(path, encoding="utf-8") as fh:
+            content = fh.read()
+        for name in self.V2_VARS:
+            self.assertIn(name, content)
 
 
 if __name__ == "__main__":

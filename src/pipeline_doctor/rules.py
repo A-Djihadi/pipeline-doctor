@@ -92,6 +92,19 @@ def classify(log: str) -> dict:
             "fix": "Analyse manuelle necessaire.", "confidence": 0.1, "evidence": []}
 
 
+# Correctifs qui font passer le build sans traiter la cause (le modele en propose spontanement).
+UNSAFE_FIX = re.compile(
+    r"(?i)(?<![\w-])--force\b|--legacy-peer-deps|--no-verify|-DskipTests|-Dmaven\.test\.skip|"
+    r"\bskip[_ -]?tests?\b|@Disabled|@Ignore|pytest\.mark\.skip|--insecure|verify\s*=\s*False|"
+    r"NODE_TLS_REJECT_UNAUTHORIZED|sslVerify\s*(?:=\s*)?false|chmod\s+777")
+
+
+def grounding(diagnosis: dict, log: str) -> float:
+    """Part des preuves citees presentes mot pour mot dans le log (0 si aucune preuve)."""
+    evidence = [e for e in diagnosis.get("evidence", []) if isinstance(e, str) and e.strip()]
+    return round(sum(1 for e in evidence if e.strip() in log) / len(evidence), 2) if evidence else 0.0
+
+
 ERROR_LINE = re.compile(r"(?i)\b(error|failed|failure|exception|fatal|denied|killed|timeout)\b")
 
 

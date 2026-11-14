@@ -18,6 +18,8 @@ Cree un *fine-grained personal access token* :
 - Settings > Developer settings > Personal access tokens > Fine-grained tokens.
 - Repository : `A-Djihadi/pipeline-doctor`.
 - Permissions : **Actions : Read-only**, **Contents : Read-only** (ou Metadata : Read-only).
+  `Contents : Read-only` est requis en plus pour le mode `propose` des correctifs (l'agent lit
+  l'arbre et les fichiers du commit en echec).
 
 Ne le committe jamais.
 
@@ -65,3 +67,37 @@ PYTHONPATH=src python3 -m pipeline_doctor.agent --once --dry-run   # voir sans r
 ```
 
 Le journal des diagnostics est dans la base `PD_DB` (defaut `diagnostics.db`).
+
+## 6. Source Jenkins (lecture seule, ADR-0007)
+
+Cree un utilisateur Jenkins dedie avec uniquement `Overall/Read` + `Job/Read` sur les jobs
+surveilles, puis genere un token API pour cet utilisateur. Stocke-les dans
+`/etc/pipeline-doctor.env` (chmod 600) :
+
+```bash
+PD_JENKINS_URL=https://jenkins.example.com
+PD_JENKINS_JOBS=team/app/main
+PD_JENKINS_USER=pd-readonly
+PD_JENKINS_TOKEN=<api-token>
+```
+
+L'agent ne fait que des `GET` (liste des builds, `consoleText`) ; il ne declenche, n'annule ni ne
+configure jamais rien.
+
+## 7. Correctifs proposes : mode `pr` (ADR-0008, actions owner)
+
+Le mode `propose` ne demande que `Contents : Read-only` (section 2). Le mode `pr` demande en plus,
+dans cet ordre :
+
+3. Creer un *machine user* (ex. `pd-bot`), avec 2FA, possede par le mainteneur.
+4. Forker le depot surveille dans le compte du machine user. **Ne pas** ajouter le machine user
+   comme collaborateur de l'upstream.
+5. Creer un *classic PAT* pour le machine user, scope `public_repo` uniquement, expiration 90 jours ;
+   le stocker comme `PD_FIX_TOKEN` dans `/etc/pipeline-doctor.env`. Regler `PD_FIX_FORK=pd-bot/<repo>`.
+6. Upstream > Settings > Actions > General > Fork pull request workflows :
+   **Require approval for all external contributors**.
+7. Ruleset upstream sur la branche par defaut : PR requise, >= 1 approbation, approbations obsoletes
+   rejetees, checks requis (`test`, `test-agent-extra`, `secrets-scan`), pas de force-push ni de
+   suppression, liste de bypass vide sauf le proprietaire (baseline DevSecOps).
+8. Verifier une fois avec `PD_FIX_MODE=pr python -m pipeline_doctor.agent --once --dry-run`, puis un
+   vrai passage sur une branche volontairement cassee.

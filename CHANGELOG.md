@@ -10,6 +10,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) - versionnage 
 - Schema d'architecture regenere (sans l'escalade cloud retiree par l'ADR-0004, avec les cas d'utilisation) ; schema du graphe mis a jour.
 
 ### Added
+- v2 : source Jenkins (lecture seule, ADR-0007) et correctifs proposes — mode `propose` (diff garde poste sur Slack, aucune ecriture) et mode `pr` (PR *draft* depuis un fork bot, jamais mergee par l'agent, ADR-0008) ; retro-compatibilite totale par defaut (ADR-0009).
 - Mode graphe LangGraph (`graph.py`) : sanitize -> classify -> diagnose, re-essai a contexte resserre si confiance basse, repli par regles si Ollama est indisponible, validation humaine (`--review`, interrupt + checkpointer), schema Mermaid (ADR-0005).
 - Observabilite Langfuse auto-hebergee (`tracing.py`, `deploy/langfuse/`) : span par noeud, generation par appel Ollama (tokens, modele, prompt versionne), scores `confidence` / `evidence_grounded` / `source`, sanitizer branche en `mask`.
 - Evaluation (`evals.py`, `examples/expected.json`, 5 nouveaux logs) : evaluateurs deterministes, rapport local ou experience Langfuse ; gate CI sur les fuites de secrets.

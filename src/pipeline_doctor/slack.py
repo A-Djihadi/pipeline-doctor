@@ -111,6 +111,44 @@ def build_diagnosis_payload(repo, run_name, branch, run_id, run_url,
     return {"blocks": blocks}
 
 
+def build_fix_payload(repo, run_id, run_url, status, reason, summary, diff, pr_url=None):
+    """Payload Block Kit pour un correctif propose (diff deja garde).
+
+    Poste seulement pour `proposed` et `pr_opened` ; les autres issues sont
+    journalisees sans notification.
+    """
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text",
+                     "text": f"\U0001F6E0\uFE0F Correctif propose : {repo}"},
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Run*\n<{run_url}|#{run_id}>"},
+                {"type": "mrkdwn", "text": f"*Statut*\n{status}"},
+            ],
+        },
+    ]
+    if summary:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Resume*\n{summary}"},
+        })
+    if diff:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"```{diff[:MAX_BLOCK_CHARS]}```"},
+        })
+    if pr_url:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Pull request*\n<{pr_url}|{pr_url}>"},
+        })
+    return {"blocks": blocks}
+
+
 def send(webhook_url: str, payload: dict, timeout: int = 30) -> int:
     """POST le payload vers l'Incoming Webhook, retourne le code HTTP."""
     req = urllib.request.Request(

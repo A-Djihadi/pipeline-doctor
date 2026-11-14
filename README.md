@@ -12,7 +12,8 @@ Agent qui lit le log d'un build CI en echec et propose un diagnostic : cause pro
 *(source modifiable : `docs/architecture.excalidraw`, a ouvrir sur excalidraw.com)*
 
 ## Principes
-- **Lecture seule** : l'agent propose, il n'applique rien.
+- **Lecture seule** envers la CI et le depot surveille : l'agent lit, il n'applique rien.
+- **Correctifs sur opt-in, jamais merges par l'agent** : en mode `pr`, l'agent ouvre une PR *draft* depuis un fork bot ; il ne peut pas la merger, l'approuver ni lancer sa CI lui-meme (ADR-0008).
 - **Secrets masques** avant tout envoi a un modele (tokens, mots de passe, cles AWS, URLs avec identifiants).
 - **Local only** : Ollama traite tous les diagnostics, aucun modele cloud (ni DeepSeek, ni Claude), aucune cle API cloud.
 - **Zero dependance** pour le coeur : bibliotheque standard Python uniquement. LangGraph et Langfuse sont un extra optionnel (`requirements-agent.txt`).
@@ -54,6 +55,42 @@ un run est traite une seule fois.
 
 - Lancer : `PD_REPO=... GITHUB_TOKEN=... python -m pipeline_doctor.agent --once` (ou `--interval 300`).
 - Voir [deploy/](deploy/) (systemd + cron) et [ADR-0003](docs/adr/0003-agent-auto-heberge.md).
+
+## Source Jenkins (ADR-0007)
+
+En plus de GitHub Actions, l'agent peut poller des jobs Jenkins (lecture seule, API JSON) :
+
+```bash
+PD_SOURCES=github,jenkins \
+PD_JENKINS_URL=https://jenkins.example.com \
+PD_JENKINS_JOBS=team/app/main \
+PD_JENKINS_USER=<utilisateur-lecture-seule> \
+PD_JENKINS_TOKEN=<api-token> \
+PYTHONPATH=src python -m pipeline_doctor.agent --once
+```
+
+- Le compte Jenkins doit avoir `Overall/Read` + `Job/Read` (voir [deploy/](deploy/)).
+- Les builds `FAILURE` termines sont diagnostiques comme les runs GitHub, une seule fois (journal `jenkins_diagnostics`).
+- Alternative zero-code, pour un pipeline donne :
+  `curl -s -u <user>:<token> https://jenkins.example.com/job/app/12/consoleText | python -m pipeline_doctor -`
+
+## Correctifs proposes (ADR-0008)
+
+Pour un run GitHub eligible (diagnostic LLM, categorie `compilation`/`tests`/`dependency`),
+l'agent peut proposer un patch minimal (search/replace exact + gardes deterministes) :
+
+- **`PD_FIX_MODE=propose`** : poste le diff (deja garde) sur Slack, sans aucune ecriture.
+- **`PD_FIX_MODE=pr`** : ouvre une PR *draft* depuis un fork bot (`PD_FIX_FORK`, `PD_FIX_TOKEN`).
+  Le bot n'a aucun droit sur l'upstream : seule une personne humaine peut approuver la CI du
+  fork, marquer la PR prete, l'approuver et la merger.
+
+```bash
+PD_FIX_MODE=pr PD_FIX_FORK=pd-bot/pipeline-doctor PD_FIX_TOKEN=<classic-pat-public_repo> \
+PYTHONPATH=src python -m pipeline_doctor.agent --once
+```
+
+Tout est **off par defaut** : sans `PD_FIX_MODE`, le comportement v1 est identique. Voir
+[ADR-0008](docs/adr/0008-fix-pr-human-validation.md) et [deploy/](deploy/) pour les actions owner.
 
 ## Mode graphe : LangGraph + Langfuse (ADR-0005)
 
@@ -110,7 +147,7 @@ pip install -r requirements-agent.txt && PYTHONPATH=src python -m unittest disco
 - [x] 5. Journal des diagnostics (UI) — consultation en CLI (`journal`, `journal show`) + export HTML
 - [ ] 5b. Demo video
 - [ ] 5c. Article
-- [ ] v2. Support Jenkins, ouverture de PR avec validation humaine
+- [x] v2. Support Jenkins, ouverture de PR avec validation humaine
 
 ## Securite et documentation
 - Failles : voir [SECURITY.md](SECURITY.md) (signalement prive, pas d'issue publique).
